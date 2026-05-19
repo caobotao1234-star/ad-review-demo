@@ -19,14 +19,17 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 
 def run(cmd: list[str]) -> tuple[int, str, str]:
-    r = subprocess.run(
-        [sys.executable] + cmd,
-        capture_output=True,
-        text=True,
-        timeout=120,
-        cwd=str(PROJECT_ROOT),
-    )
-    return r.returncode, r.stdout, r.stderr
+    try:
+        r = subprocess.run(
+            [sys.executable] + cmd,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            cwd=str(PROJECT_ROOT),
+        )
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "", "TIMEOUT: LLM API call exceeded 300s"
 
 
 def main():
@@ -63,7 +66,7 @@ def main():
             data = json.loads(output_json.read_text())
             terminated = data.get("terminated_at", "?")
 
-        status = "✓" if code == 0 else "✗"
+        status = "✓" if code == 0 else ("⏱ TIMEOUT" if code == -1 else "✗")
         mock_tag = "🎭 mock" if is_mock else "🎬 真实"
         results.append({
             "file": ad_file.name,
