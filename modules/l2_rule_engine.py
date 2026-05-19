@@ -77,7 +77,7 @@ class L2RuleEngine:
         evidence: list[Evidence] = []
         risk_score = 0
 
-        # --- 1. Build ad_claim_text ---
+        # --- 1. Build ad_claim_text (kept for category/landing checks) ---
         ocr_texts = []
         for frame_ocr in ocr:
             ocr_texts.extend(frame_ocr.texts)
@@ -86,94 +86,109 @@ class L2RuleEngine:
             filter(None, [ad.title, ad.description] + ocr_texts + [asr.text])
         )
 
-        # --- 2. Normalize texts ---
-        norm_claim = normalize_text(ad_claim_text)
-        norm_landing = normalize_text(ad.landing_page.text)
-        combined_norm = norm_claim + norm_landing
+        # --- 2. Build text_sources for per-source keyword matching ---
+        text_sources: list[tuple[str, str]] = [
+            ("title", ad.title),
+            ("description", ad.description),
+        ]
+        for frame_ocr in ocr:
+            text_sources.append((f"ocr:{frame_ocr.frame_id}", " ".join(frame_ocr.texts)))
+        text_sources.append(("asr", asr.text))
+        text_sources.append(("landing_page", ad.landing_page.text))
 
-        # --- 3. Hard block keywords ---
+        # Normalize claim text for category/landing checks (unchanged)
+        norm_claim = normalize_text(ad_claim_text)
+
+        # --- 3. Hard block keywords (per-source matching) ---
         for entry in self.keywords.hard_block:
             if entry.category != "all" and entry.category != ad.category:
                 continue
             norm_word = normalize_text(entry.word)
-            if norm_word in combined_norm:
-                reason = render_reason(
-                    ReasonCode.L2_HARD_BLOCK_HIT,
-                    {"keyword": entry.word, "source": "ad_claim+landing"},
-                )
-                signals.append(Signal(
-                    source=SignalSource.KEYWORD,
-                    code=ReasonCode.L2_HARD_BLOCK_HIT,
-                    detail=entry.word,
-                    score_delta=40,
-                ))
-                evidence.append(Evidence(
-                    source=SignalSource.KEYWORD,
-                    raw=entry.word,
-                    normalized=norm_word,
-                    location="ad_claim+landing",
-                ))
-                return LayerResult(
-                    layer="L2",
-                    decision=Decision.REJECT,
-                    risk_score=risk_score + 40,
-                    reason_code=ReasonCode.L2_HARD_BLOCK_HIT,
-                    reason=reason,
-                    signals=signals,
-                    evidence=evidence,
-                )
+            for source_name, source_text in text_sources:
+                norm_source = normalize_text(source_text)
+                if norm_word in norm_source:
+                    reason = render_reason(
+                        ReasonCode.L2_HARD_BLOCK_HIT,
+                        {"keyword": entry.word, "source": source_name},
+                    )
+                    signals.append(Signal(
+                        source=SignalSource.KEYWORD,
+                        code=ReasonCode.L2_HARD_BLOCK_HIT,
+                        detail=f"{entry.word} (来源: {source_name})",
+                        score_delta=40,
+                    ))
+                    evidence.append(Evidence(
+                        source=SignalSource.KEYWORD,
+                        raw=entry.word,
+                        normalized=norm_word,
+                        location=source_name,
+                    ))
+                    return LayerResult(
+                        layer="L2",
+                        decision=Decision.REJECT,
+                        risk_score=risk_score + 40,
+                        reason_code=ReasonCode.L2_HARD_BLOCK_HIT,
+                        reason=reason,
+                        signals=signals,
+                        evidence=evidence,
+                    )
 
-        # --- 4. Normalized block keywords ---
+        # --- 4. Normalized block keywords (per-source matching) ---
         for entry in self.keywords.normalized_block:
             if entry.category != "all" and entry.category != ad.category:
                 continue
             norm_word = normalize_text(entry.word)
-            if norm_word in combined_norm:
-                reason = render_reason(
-                    ReasonCode.L2_NORMALIZED_BLOCK_HIT,
-                    {"keyword": entry.word, "raw_text": entry.word, "source": "ad_claim+landing"},
-                )
-                signals.append(Signal(
-                    source=SignalSource.KEYWORD,
-                    code=ReasonCode.L2_NORMALIZED_BLOCK_HIT,
-                    detail=entry.word,
-                    score_delta=40,
-                ))
-                evidence.append(Evidence(
-                    source=SignalSource.KEYWORD,
-                    raw=entry.word,
-                    normalized=norm_word,
-                    location="ad_claim+landing",
-                ))
-                return LayerResult(
-                    layer="L2",
-                    decision=Decision.REJECT,
-                    risk_score=risk_score + 40,
-                    reason_code=ReasonCode.L2_NORMALIZED_BLOCK_HIT,
-                    reason=reason,
-                    signals=signals,
-                    evidence=evidence,
-                )
+            for source_name, source_text in text_sources:
+                norm_source = normalize_text(source_text)
+                if norm_word in norm_source:
+                    reason = render_reason(
+                        ReasonCode.L2_NORMALIZED_BLOCK_HIT,
+                        {"keyword": entry.word, "raw_text": entry.word, "source": source_name},
+                    )
+                    signals.append(Signal(
+                        source=SignalSource.KEYWORD,
+                        code=ReasonCode.L2_NORMALIZED_BLOCK_HIT,
+                        detail=f"{entry.word} (来源: {source_name})",
+                        score_delta=40,
+                    ))
+                    evidence.append(Evidence(
+                        source=SignalSource.KEYWORD,
+                        raw=entry.word,
+                        normalized=norm_word,
+                        location=source_name,
+                    ))
+                    return LayerResult(
+                        layer="L2",
+                        decision=Decision.REJECT,
+                        risk_score=risk_score + 40,
+                        reason_code=ReasonCode.L2_NORMALIZED_BLOCK_HIT,
+                        reason=reason,
+                        signals=signals,
+                        evidence=evidence,
+                    )
 
-        # --- 5. Suspicious slang ---
+        # --- 5. Suspicious slang (per-source matching) ---
         for entry in self.keywords.suspicious_slang:
             if entry.category != "all" and entry.category != ad.category:
                 continue
             norm_word = normalize_text(entry.word)
-            if norm_word in combined_norm:
-                risk_score += 15
-                signals.append(Signal(
-                    source=SignalSource.KEYWORD,
-                    code=ReasonCode.L2_SUSPICIOUS_SLANG_HIT,
-                    detail=entry.word,
-                    score_delta=15,
-                ))
-                evidence.append(Evidence(
-                    source=SignalSource.KEYWORD,
-                    raw=entry.word,
-                    normalized=norm_word,
-                    location="ad_claim+landing",
-                ))
+            for source_name, source_text in text_sources:
+                norm_source = normalize_text(source_text)
+                if norm_word in norm_source:
+                    risk_score += 15
+                    signals.append(Signal(
+                        source=SignalSource.KEYWORD,
+                        code=ReasonCode.L2_SUSPICIOUS_SLANG_HIT,
+                        detail=f"{entry.word} (来源: {source_name})",
+                        score_delta=15,
+                    ))
+                    evidence.append(Evidence(
+                        source=SignalSource.KEYWORD,
+                        raw=entry.word,
+                        normalized=norm_word,
+                        location=source_name,
+                    ))
+                    break  # 每个关键词只记录第一个命中源
 
         # --- 6. Category qualification check ---
         cat_signals = self._check_category_qualification(ad, norm_claim)
