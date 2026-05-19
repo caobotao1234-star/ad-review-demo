@@ -1,7 +1,8 @@
-"""L4 Agent Review: LLM-based complex ad review with policy RAG and history case RAG."""
+"""L4 Agent Review: LLM-based complex ad review with multimodal vision, tool calling, and cross-verification."""
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from pathlib import Path
@@ -23,12 +24,32 @@ from modules.utils import normalize_text, render_reason
 
 logger = logging.getLogger(__name__)
 
-# System prompt for L4 Agent
-_L4_SYSTEM_PROMPT = """你是广告合规复核 Agent。你必须严格输出 JSON, 不允许包含任何解释性文字。
-你不能调用任何修改文件、修改配置、访问网络、加载图像 embedding 的工具。
-你只能引用我提供的政策文档摘录和历史案例文本作为依据。
+# ---------------------------------------------------------------------------
+# System Prompt: multimodal + cross-verification + tool calling
+# ---------------------------------------------------------------------------
 
-输出格式:
+_L4_SYSTEM_PROMPT = """你是广告合规复核 Agent，具备多模态审核能力。
+
+你的任务：
+1. 分析广告文案、落地页文本、商家资质信息
+2. 观察广告画面截图，判断画面内容是否与文案一致
+3. 使用工具检索相关政策和历史案例
+4. 进行交叉验证：对比"文案宣称" vs "画面实际内容" vs "落地页描述"
+5. 综合所有证据给出最终判定
+
+你可以使用以下工具：
+- search_policy: 检索相关审核政策条文
+- search_cases: 检索相似的历史审核案例
+- cross_verify: 交叉验证文案宣称与实际证据是否一致
+
+交叉验证重点关注：
+- 文案说"官方正品"，画面中是否有品牌标识/授权标志？
+- 文案说"专柜品质"，画面中商品做工是否精细？
+- 落地页说"渠道货/尾单"，是否与文案"正品"矛盾？
+- 画面中是否有二维码/微信号等私域引流元素？
+- 画面中是否有夸大宣传的文字（如收益截图）？
+
+最终必须严格输出 JSON：
 {
   "decision": "REJECT | APPROVE | HUMAN_REVIEW",
   "confidence": 0.0-1.0,
@@ -36,12 +57,69 @@ _L4_SYSTEM_PROMPT = """你是广告合规复核 Agent。你必须严格输出 JS
   "evidence_chain": ["..."],
   "policy_refs": ["..."],
   "reason": "...",
-  "next_action": "..."
+  "next_action": "...",
+  "visual_analysis": "对画面内容的分析描述",
+  "cross_verification": {
+    "claim_vs_visual": "文案与画面是否一致的判断",
+    "claim_vs_landing": "文案与落地页是否一致的判断",
+    "visual_vs_landing": "画面与落地页是否一致的判断"
+  }
 }"""
+
+# ---------------------------------------------------------------------------
+# Tool definitions (OpenAI function calling format)
+# ---------------------------------------------------------------------------
+
+_L4_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_policy",
+            "description": "检索与查询相关的广告审核政策条文",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "检索关键词，如'品牌授权'、'金融资质'"}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_cases",
+            "description": "检索相似的历史广告审核案例",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "案例检索关键词"}
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cross_verify",
+            "description": "交叉验证：对比广告文案宣称与实际证据（落地页/OCR/ASR）是否一致",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "claim": {"type": "string", "description": "广告文案中的宣称内容"},
+                    "evidence": {"type": "string", "description": "实际证据（落地页文本/OCR识别/ASR转写）"},
+                    "aspect": {"type": "string", "description": "验证维度：brand/price/category/drainage"},
+                },
+                "required": ["claim", "evidence", "aspect"],
+            },
+        },
+    },
+]
 
 
 class L4AgentReview:
-    """L4 layer: Agent-based complex review for gray-zone ads."""
+    """L4 layer: Agent-based complex review with multimodal vision, tool calling, and cross-verification."""
 
     def __init__(
         self,
@@ -54,6 +132,17 @@ class L4AgentReview:
         self.thresholds = thresholds
         self._policy_docs = self._load_json(policy_docs_path)
         self._history_cases = self._load_json(history_cases_path)
+
+        # Register tool implementations for function calling
+        self.agent.register_tools({
+            "search_policy": self._tool_search_policy,
+            "search_cases": self._tool_search_cases,
+            "cross_verify": self._cross_verify_impl,
+        })
+
+    # ------------------------------------------------------------------
+    # JSON loading
+    # ------------------------------------------------------------------
 
     def _load_json(self, path: Path) -> list[dict[str, Any]]:
         """Load a JSON file, returning empty list on failure."""
@@ -68,6 +157,10 @@ class L4AgentReview:
         except (json.JSONDecodeError, OSError) as e:
             logger.warning("Failed to load %s: %s", path, e)
             return []
+
+    # ------------------------------------------------------------------
+    # RAG retrieval methods (used by tools)
+    # ------------------------------------------------------------------
 
     def policy_rag(self, query: str, top_k: int = 5) -> list[str]:
         """Simple Jaccard text retrieval from policy docs."""
@@ -100,6 +193,98 @@ class L4AgentReview:
             return 0.0
         return len(sa & sb) / len(sa | sb)
 
+    # ------------------------------------------------------------------
+    # Tool implementations for function calling
+    # ------------------------------------------------------------------
+
+    def _tool_search_policy(self, args: dict) -> dict:
+        """Tool: search_policy(query) → 检索政策文档."""
+        query = args.get("query", "")
+        results = self.policy_rag(query, top_k=3)
+        return {"query": query, "results": results, "count": len(results)}
+
+    def _tool_search_cases(self, args: dict) -> dict:
+        """Tool: search_cases(query) → 检索历史案例."""
+        query = args.get("query", "")
+        results = self.history_case_rag(query, top_k=3)
+        return {"query": query, "results": results, "count": len(results)}
+
+    def _cross_verify_impl(self, args: dict) -> dict:
+        """Tool: cross_verify(claim, evidence, aspect) → 交叉验证文案与证据是否一致."""
+        claim = args.get("claim", "")
+        evidence = args.get("evidence", "")
+        aspect = args.get("aspect", "general")
+
+        claim_norm = normalize_text(claim)
+        evidence_norm = normalize_text(evidence)
+
+        # Simple consistency check based on aspect
+        contradictions = []
+
+        if aspect == "brand":
+            if "正品" in claim_norm and any(
+                w in evidence_norm for w in ["渠道货", "尾单", "复刻", "高仿"]
+            ):
+                contradictions.append("文案宣称正品，但证据含渠道/仿冒表述")
+            if "官方" in claim_norm and "授权" not in evidence_norm and "官方" not in evidence_norm:
+                contradictions.append("文案宣称官方，但证据中无官方授权信息")
+        elif aspect == "price":
+            if any(w in claim_norm for w in ["免费", "低价"]) and any(
+                w in evidence_norm for w in ["高价", "原价"]
+            ):
+                contradictions.append("文案宣称低价/免费，但证据显示高价")
+        elif aspect == "category":
+            if "日用品" in claim_norm and any(
+                w in evidence_norm for w in ["减肥", "治疗", "理财"]
+            ):
+                contradictions.append("宣称日用品类目，但证据含医疗/金融内容")
+        elif aspect == "drainage":
+            if any(w in evidence_norm for w in ["微信", "私聊", "加好友"]):
+                contradictions.append("证据含私域引流内容")
+
+        return {
+            "consistent": len(contradictions) == 0,
+            "contradictions": contradictions,
+            "claim_summary": claim[:100],
+            "evidence_summary": evidence[:100],
+        }
+
+    # ------------------------------------------------------------------
+    # Multimodal: select representative frames → base64
+    # ------------------------------------------------------------------
+
+    def _select_representative_frames(self, media: MediaResult, max_frames: int = 3) -> list[str]:
+        """Select representative frames and encode as base64 JPEG strings.
+
+        Strategy: pick first frame + middle frame + last frame (up to max_frames).
+        """
+        if media.mock or not media.sampled_frames:
+            return []
+
+        frames = media.sampled_frames
+        # Select first, middle, last
+        indices = [0]
+        if len(frames) > 2:
+            indices.append(len(frames) // 2)
+        if len(frames) > 1:
+            indices.append(len(frames) - 1)
+
+        images_b64: list[str] = []
+        for idx in indices[:max_frames]:
+            frame_path = Path(frames[idx].frame_path)
+            if frame_path.exists():
+                try:
+                    img_bytes = frame_path.read_bytes()
+                    images_b64.append(base64.b64encode(img_bytes).decode("utf-8"))
+                except OSError as e:
+                    logger.warning("Failed to read frame %s: %s", frame_path, e)
+
+        return images_b64
+
+    # ------------------------------------------------------------------
+    # Main review method
+    # ------------------------------------------------------------------
+
     def review(
         self,
         ad: AdMeta,
@@ -108,8 +293,8 @@ class L4AgentReview:
         l3: LayerResult,
         media: MediaResult,
     ) -> LayerResult:
-        """Perform L4 agent review."""
-        # Build query for RAG
+        """Perform L4 agent review with multimodal vision and cross-verification."""
+        # Build query for RAG pre-fetch (context for user prompt)
         query = f"{ad.title} {ad.description} {ad.category} {ad.brand}"
         policy_excerpts = self.policy_rag(query)
         history_cases = self.history_case_rag(query)
@@ -117,8 +302,24 @@ class L4AgentReview:
         # Build user prompt
         user_prompt = self._build_user_prompt(ad, l1, l2, l3, media, policy_excerpts, history_cases)
 
-        # Call agent
-        response = self.agent.call(_L4_SYSTEM_PROMPT, user_prompt, {"scenario": "l4_review"})
+        # Select representative frames for multimodal analysis
+        images = self._select_representative_frames(media)
+
+        # Call agent: use vision if we have real frames, otherwise fallback to text-only
+        if images:
+            logger.info("L4 calling agent with vision (%d images) + tools", len(images))
+            response = self.agent.call_with_vision(
+                _L4_SYSTEM_PROMPT,
+                user_prompt,
+                images,
+                tools=_L4_TOOLS,
+                schema_hint={"scenario": "l4_review"},
+            )
+        else:
+            logger.info("L4 calling agent in text-only mode (no frames available)")
+            response = self.agent.call(
+                _L4_SYSTEM_PROMPT, user_prompt, {"scenario": "l4_review"}
+            )
 
         # Handle agent error
         if response.error:
@@ -192,6 +393,10 @@ class L4AgentReview:
                 "reason": payload.reason,
             })
 
+        # Extract cross-verification and visual analysis from response
+        visual_analysis = response.parsed.get("visual_analysis", "")
+        cross_verification = response.parsed.get("cross_verification", {})
+
         return LayerResult(
             layer="L4",
             decision=decision,
@@ -206,8 +411,16 @@ class L4AgentReview:
                 "policy_refs": payload.policy_refs,
                 "agent_reason": payload.reason,
                 "repair_applied": response.repair_applied,
+                "visual_analysis": visual_analysis,
+                "cross_verification": cross_verification,
+                "multimodal_used": len(images) > 0,
+                "frames_sent": len(images),
             },
         )
+
+    # ------------------------------------------------------------------
+    # User prompt builder
+    # ------------------------------------------------------------------
 
     def _build_user_prompt(
         self,
@@ -219,7 +432,7 @@ class L4AgentReview:
         policy_excerpts: list[str],
         history_cases: list[str],
     ) -> str:
-        """Build the user prompt for L4 agent."""
+        """Build the user prompt for L4 agent with cross-verification context."""
         parts = [
             "=== 广告审核复核请求 ===",
             f"ad_id: {ad.ad_id}",
@@ -250,6 +463,12 @@ class L4AgentReview:
             f"l3_risk_score: {l3.risk_score}",
             f"l3_reason: {l3.reason}",
             f"risk_score: {l3.risk_score}",
+            "",
+            "=== 交叉验证要求 ===",
+            "请执行以下三维交叉验证：",
+            f"1. 文案宣称 vs 画面内容：广告文案「{ad.title}」是否与画面实际展示一致？",
+            f"2. 文案宣称 vs 落地页：广告文案是否与落地页内容「{ad.landing_page.text[:100]}」一致？",
+            f"3. 画面内容 vs 落地页：画面展示是否与落地页描述一致？",
             "",
             "=== 相关政策文档 ===",
         ]

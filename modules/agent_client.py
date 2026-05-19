@@ -1,4 +1,4 @@
-"""AgentClient: LLM call wrapper with MockAgent fallback and JSON repair."""
+"""AgentClient: LLM call wrapper with MockAgent fallback, JSON repair, vision, and tool calling."""
 
 from __future__ import annotations
 
@@ -42,7 +42,6 @@ class MockAgent:
 
     def _mock_l4_review(self, user: str) -> dict[str, Any]:
         """Mock L4 review: decide based on risk_score in user prompt."""
-        # Try to extract risk_score from user prompt
         risk_score = 0
         m = re.search(r"risk_score[\"']?\s*[:=]\s*(\d+)", user)
         if m:
@@ -57,6 +56,12 @@ class MockAgent:
                 "policy_refs": [],
                 "reason": f"Mock Agent: risk_score={risk_score} is high, rejecting",
                 "next_action": "block",
+                "visual_analysis": "Mock模式：未分析实际画面",
+                "cross_verification": {
+                    "claim_vs_visual": "Mock模式：未执行图文交叉验证",
+                    "claim_vs_landing": "Mock模式：未执行文案与落地页交叉验证",
+                    "visual_vs_landing": "Mock模式：未执行画面与落地页交叉验证",
+                },
             }
         elif risk_score <= 30:
             return {
@@ -67,6 +72,12 @@ class MockAgent:
                 "policy_refs": [],
                 "reason": f"Mock Agent: risk_score={risk_score} is low, approving",
                 "next_action": "none",
+                "visual_analysis": "Mock模式：未分析实际画面",
+                "cross_verification": {
+                    "claim_vs_visual": "Mock模式：未执行图文交叉验证",
+                    "claim_vs_landing": "Mock模式：未执行文案与落地页交叉验证",
+                    "visual_vs_landing": "Mock模式：未执行画面与落地页交叉验证",
+                },
             }
         else:
             return {
@@ -77,12 +88,16 @@ class MockAgent:
                 "policy_refs": [],
                 "reason": f"Mock Agent: risk_score={risk_score} in gray zone, needs human review",
                 "next_action": "human_review",
+                "visual_analysis": "Mock模式：未分析实际画面",
+                "cross_verification": {
+                    "claim_vs_visual": "Mock模式：未执行图文交叉验证",
+                    "claim_vs_landing": "Mock模式：未执行文案与落地页交叉验证",
+                    "visual_vs_landing": "Mock模式：未执行画面与落地页交叉验证",
+                },
             }
 
     def _mock_l5_appeal(self, user: str) -> dict[str, Any]:
         """Mock L5 appeal: decide based on extra_materials presence."""
-        has_extra = "extra_materials" in user and '"extra_materials": [' not in user
-        # Check if extra_materials list is non-empty
         m = re.search(r'"extra_materials"\s*:\s*\[([^\]]*)\]', user)
         has_materials = bool(m and m.group(1).strip())
 
@@ -123,7 +138,7 @@ class MockAgent:
 
 
 class AgentClient:
-    """OpenAI-compatible API client with MockAgent fallback."""
+    """OpenAI-compatible API client with MockAgent fallback, vision, and tool calling."""
 
     def __init__(self, runtime: RuntimeConfig) -> None:
         try:
@@ -137,6 +152,7 @@ class AgentClient:
         self._api_key = os.getenv("LLM_API_KEY", "")
         self._model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         self._mock_agent = MockAgent()
+        self._registered_tools: dict[str, Any] = {}
 
         logger.info("AgentClient initialized in mode=%s", self._mode)
 
@@ -153,6 +169,18 @@ class AgentClient:
         """Return True if running in mock mode."""
         return self._mode == "mock"
 
+    def register_tools(self, tools: dict[str, Any]) -> None:
+        """Register tool implementations for function calling.
+
+        Args:
+            tools: Dict mapping tool name to callable(args: dict) -> dict
+        """
+        self._registered_tools.update(tools)
+
+    # ------------------------------------------------------------------
+    # Public API: text-only call (backward compatible)
+    # ------------------------------------------------------------------
+
     def call(self, system: str, user: str, schema_hint: dict) -> AgentResponse:
         """Call LLM or MockAgent depending on mode."""
         if self._mode == "mock":
@@ -165,6 +193,42 @@ class AgentClient:
             return self._mock_agent.call(system, user, schema_hint)
 
         return self._parse_with_repair(raw)
+
+    # ------------------------------------------------------------------
+    # Public API: vision + tool calling
+    # ------------------------------------------------------------------
+
+    def call_with_vision(
+        self,
+        system: str,
+        user_text: str,
+        images: list[str],
+        tools: list[dict] | None = None,
+        schema_hint: dict | None = None,
+    ) -> AgentResponse:
+        """Call LLM with vision (images as base64) and optional tool definitions.
+
+        Args:
+            system: System prompt
+            user_text: Text part of user message
+            images: List of base64-encoded image strings (JPEG)
+            tools: Optional list of tool definitions for function calling
+            schema_hint: Hint for MockAgent
+        """
+        if self._mode == "mock":
+            return self._mock_agent.call(system, user_text, schema_hint or {})
+
+        try:
+            raw = self._call_vision_api(system, user_text, images, tools)
+        except Exception as e:
+            logger.warning("LLM vision call failed (%s), falling back to MockAgent", e)
+            return self._mock_agent.call(system, user_text, schema_hint or {})
+
+        return self._parse_with_repair(raw)
+
+    # ------------------------------------------------------------------
+    # Private: text-only API call
+    # ------------------------------------------------------------------
 
     def _call_openai_compat(self, system: str, user: str) -> str:
         """Call OpenAI-compatible chat completions API."""
@@ -188,6 +252,112 @@ class AgentClient:
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
+
+    # ------------------------------------------------------------------
+    # Private: vision API call with optional tools
+    # ------------------------------------------------------------------
+
+    def _call_vision_api(
+        self,
+        system: str,
+        user_text: str,
+        images: list[str],
+        tools: list[dict] | None = None,
+    ) -> str:
+        """Call OpenAI-compatible vision API with images and optional tools."""
+        import requests
+
+        url = self._base_url.rstrip("/") + "/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+        # Build multimodal user content
+        user_content: list[dict] = [{"type": "text", "text": user_text}]
+        for img_b64 in images[:3]:  # Limit to 3 images to control token cost
+            user_content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+            })
+
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_content},
+            ],
+            "temperature": 0.1,
+            "max_tokens": 2000,
+        }
+
+        # Add tools if provided (function calling)
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        resp = requests.post(url, json=payload, headers=headers, timeout=90)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Handle tool calls response
+        message = data["choices"][0]["message"]
+        if message.get("tool_calls"):
+            # Execute tool calls and make follow-up request
+            return self._handle_tool_calls(message, payload, headers, url)
+
+        return message.get("content", "")
+
+    # ------------------------------------------------------------------
+    # Private: function calling handler
+    # ------------------------------------------------------------------
+
+    def _handle_tool_calls(
+        self,
+        assistant_message: dict,
+        original_payload: dict,
+        headers: dict,
+        url: str,
+    ) -> str:
+        """Handle function calling: execute tools and get final response."""
+        import requests
+
+        tool_results = []
+        for tool_call in assistant_message["tool_calls"]:
+            func_name = tool_call["function"]["name"]
+            func_args = json.loads(tool_call["function"]["arguments"])
+
+            # Execute the tool locally
+            result = self._execute_tool(func_name, func_args)
+            tool_results.append({
+                "role": "tool",
+                "tool_call_id": tool_call["id"],
+                "content": json.dumps(result, ensure_ascii=False),
+            })
+
+        # Follow-up call with tool results
+        messages = original_payload["messages"] + [assistant_message] + tool_results
+        follow_up = {
+            "model": original_payload["model"],
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 2000,
+        }
+
+        resp = requests.post(url, json=follow_up, headers=headers, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"].get("content", "")
+
+    def _execute_tool(self, func_name: str, func_args: dict) -> dict:
+        """Execute a tool call locally. Tools are registered by L4AgentReview."""
+        if func_name in self._registered_tools:
+            return self._registered_tools[func_name](func_args)
+        return {"error": f"Unknown tool: {func_name}"}
+
+    # ------------------------------------------------------------------
+    # Private: JSON parsing and repair
+    # ------------------------------------------------------------------
 
     def _parse_with_repair(self, raw: str) -> AgentResponse:
         """Parse LLM output as JSON, attempting repair if needed."""
