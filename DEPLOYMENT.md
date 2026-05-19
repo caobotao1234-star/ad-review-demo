@@ -1,612 +1,295 @@
-# 完整部署指南：让每个环节都真实运行
+# 部署与运行手册
 
-本文档说明如何在一台全新的云服务器上，clone 代码后让 demo 的**每一个环节**都用真实数据跑起来。
-
----
-
-## 零、你需要准备的原始素材
-
-| 素材 | 数量 | 说明 |
-|------|------|------|
-| 广告视频 (.mp4) | 8-10 个 | 10-60 秒，覆盖不同违规类型 |
-| 历史违规视频 | 2-3 个 | 用于生成 L1 历史指纹库 |
-| 历史安全视频 | 1-2 个 | 用于生成 L1 历史指纹库 |
-| LLM API Key | 1 个 | DeepSeek/OpenAI/通义千问/Ollama 任一 |
-
-**视频不需要是真实广告**，任何 10-60 秒的 mp4 都行（用于验证抽帧/ASR/QR 流程）。
+从零到全部环节真实运行的傻瓜式操作指南。
 
 ---
 
-## 一、数据集设计：8 条广告覆盖所有环节
+## 你需要准备什么
 
-为了踩中每一个审核环节，建议准备以下 8 条数据（视频 + JSON 成对）：
+| 准备项 | 说明 | 必须？ |
+|--------|------|--------|
+| 视频文件 | 用于测试的 .mp4 广告视频（无视频也能跑 mock 模式） | 可选 |
+| LLM API Key | 任何 OpenAI 兼容 API（火山引擎 Ark / DeepSeek / OpenAI / Ollama） | L4/L5 必须 |
 
-| 编号 | 场景 | 期望路径 | 视频要求 |
-|------|------|---------|---------|
-| real_001 | 箱包仿冒疑似（灰区） | L1→L2→L3→**L4 Agent** | 任意箱包展示视频 |
-| real_002 | 箱包明确违规 | L1→**L2 REJECT** | 任意视频（关键词在 JSON 里） |
-| real_003 | 低风险日用品 | L1→L2→**L3 APPROVE** | 任意日用品视频 |
-| real_004 | 金融违规 | L1→**L2 REJECT** | 任意视频 |
-| real_005 | 类目错挂（减肥） | L1→L2→L3→**L4 Agent** | 任意视频 |
-| real_006 | **L1 历史命中** | **L1 REJECT**（直接短路） | 与历史违规视频**相同** |
-| real_007 | 含二维码私域引流 | L1→L2→L3→L4 | 画面中含微信二维码的视频 |
-| real_008 | 完全合规品牌广告 | L1→L2→**L3 APPROVE** | 任意视频 |
-
-**关键点：**
-- real_006 的视频必须和 `history_videos/violation_001.mp4` 是**同一个文件**（或高度相似），这样 L1 才能命中
-- real_007 的视频画面中需要有一个微信二维码（可以用手机截屏做一个简单视频）
-- 其他视频内容不重要，因为关键词/资质/落地页信息都在 JSON 里
-
-| 项目 | 最低要求 | 推荐配置 |
-|------|---------|---------|
-| OS | Ubuntu 20.04+ | Ubuntu 22.04 |
-| Python | 3.10+ | 3.11 |
-| GPU | 无（CPU 可跑） | RTX 4090（ASR 加速） |
-| 内存 | 8GB | 16GB+ |
-| 磁盘 | 5GB（含模型） | 20GB（large-v3 模型 ~3GB） |
-| 网络 | 需要（下载模型 + LLM API） | — |
+> 没有视频文件也能跑通 L2~L5 全链路（mock 模式）。没有 LLM API Key 时 L4 会降级为 HUMAN_REVIEW。
 
 ---
 
-## 二、系统依赖安装
+## 一键部署步骤
+
+### Step 1: 安装系统依赖
 
 ```bash
-# 基础工具
-sudo apt update
-sudo apt install -y python3.11 python3.11-venv python3-pip ffmpeg git
+# Ubuntu/Debian
+sudo apt install ffmpeg python3.11 python3.11-venv
 
-# 验证
-python3.11 --version   # Python 3.11.x
-ffmpeg -version        # ffmpeg 6.x+
+# macOS
+brew install ffmpeg python@3.11
 
-# （可选）如果有 GPU
-# 确认 NVIDIA 驱动已安装
-nvidia-smi
-# 安装 CUDA toolkit（如果还没有）
-# sudo apt install -y nvidia-cuda-toolkit
+# Windows: 安装 Python 3.11+ 并确保 ffmpeg 在 PATH 中
 ```
 
----
-
-## 三、项目部署
+### Step 2: 克隆项目 + 创建虚拟环境 + 安装依赖
 
 ```bash
 git clone <your-repo-url> ad-review-demo
 cd ad-review-demo
-
 python3.11 -m venv .venv
-source .venv/bin/activate
-
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-# （可选）安装 GPU 加速依赖
-pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
-
-# （可选）安装文本 embedding 模型
-pip install sentence-transformers
 ```
 
----
-
-## 四、需要准备的东西清单
-
-### 4.1 LLM API 配置（让 L4/L5 Agent 真实调用 LLM）
+### Step 3: 配置 LLM API
 
 ```bash
 cp .env.example .env
 ```
 
-编辑 `.env`：
+编辑 `.env` 文件，填入你的 LLM 服务信息：
 
-```env
-# 任何 OpenAI 兼容 API 都行
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_API_KEY=sk-xxxxxxxxxxxxxxxx
-LLM_MODEL=deepseek-chat
-
-# 或者用 OpenAI
-# LLM_BASE_URL=https://api.openai.com/v1
-# LLM_API_KEY=sk-xxxxxxxxxxxxxxxx
-# LLM_MODEL=gpt-4o-mini
-
-# 或者本地 Ollama
-# LLM_BASE_URL=http://localhost:11434/v1
-# LLM_API_KEY=ollama
-# LLM_MODEL=qwen2.5:7b
+```
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=your-api-key-here
+LLM_MODEL=gpt-4o-mini
 ```
 
-同时修改 `config/runtime.yaml`：
+> 四种 LLM 配置示例见下方"LLM API 配置"章节。
 
-```yaml
-llm_enabled: auto   # auto = 有 key 就用真实 LLM，没有就 mock
-```
-
-**验证方式**：运行 `python main.py review --meta samples/ad_001.json`，看 L4 输出是否来自真实 LLM（reason 会是自然语言而非 "Mock Agent: ..."）。
-
----
-
-### 4.2 真实视频文件（让 MediaPreprocessor 真实抽帧）
-
-当前 samples 里的 `media_path` 指向不存在的 `.mp4`，所以走 mock。要让抽帧真实运行：
-
-**步骤：**
-
-1. 准备一个测试视频（10-30 秒，任何广告视频即可）
-2. 放到 `samples/` 目录下
-3. 修改对应的广告 JSON：
-
-```json
-{
-  "media_path": "samples/real_ad_001.mp4",
-  ...
-}
-```
-
-**运行后会发生什么：**
-- OpenCV 读取视频 → 抽首尾帧 + 每秒 1 帧 + 场景帧
-- 每帧 resize 到 64×64 → 计算 pHash（16 位 hex 字符串）
-- 相似帧去重（汉明距离 ≤ 4 的帧只保留一个）
-- 最多保留 12 帧
-- 帧图片缓存到 `outputs/cache/{ad_id}/frames/`
-- ffmpeg 提取音频到 `outputs/cache/{ad_id}/audio.wav`
-
-**关于 pHash 效率：** 是的，已经做了降采样。原始帧（可能 1920×1080）先 `cv2.resize` 到 64×64，再转灰度，再算 pHash。不会对大图直接计算。这个 resize 尺寸由 `config/runtime.yaml` 的 `phash_resize: 64` 控制。
-
----
-
-### 4.3 历史视频指纹库（让 L1 真实召回）
-
-当前 `data/history_fingerprints.json` 里的 pHash 是占位字符串，不会匹配任何真实视频。
-
-**如何生成真实指纹：**
-
-写一个小脚本，对历史违规/安全视频提取指纹：
-
-```python
-#!/usr/bin/env python3
-"""生成历史视频指纹并写入 data/history_fingerprints.json"""
-import json
-from pathlib import Path
-from modules.schemas import RuntimeConfig, AdMeta, Merchant, Qualification
-from modules.media_preprocess import MediaPreprocessor
-
-runtime = RuntimeConfig()
-preprocessor = MediaPreprocessor(runtime, Path("outputs/cache"))
-
-# 准备你的历史视频列表
-history_videos = [
-    {"path": "history_videos/violation_001.mp4", "label": "violation", "note": "1:1复刻LV"},
-    {"path": "history_videos/violation_002.mp4", "label": "violation", "note": "金融诈骗"},
-    {"path": "history_videos/safe_001.mp4", "label": "safe", "note": "正规日用品"},
-]
-
-fingerprints = []
-for i, video in enumerate(history_videos, 1):
-    ad = AdMeta(
-        ad_id=f"hist_{i:03d}",
-        media_path=video["path"],
-        merchant=Merchant(merchant_id="hist"),
-    )
-    result = preprocessor.process(ad)
-    if not result.mock:
-        fingerprints.append({
-            "history_id": f"hist_{i:03d}",
-            "label": video["label"],
-            "phash_list": result.fingerprint.phash_list,
-            "note": video["note"],
-        })
-        print(f"✓ {video['path']} → {len(result.fingerprint.phash_list)} frames")
-    else:
-        print(f"✗ {video['path']} → mock (file not found?)")
-
-output = {"fingerprints": fingerprints}
-Path("data/history_fingerprints.json").write_text(
-    json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8"
-)
-print(f"\n写入 {len(fingerprints)} 条指纹到 data/history_fingerprints.json")
-```
-
-**L1 匹配逻辑：** 对当前视频的每个帧 pHash，检查是否与历史指纹中任一帧的汉明距离 ≤ 8（`l1_hamming_threshold`）。如果 ≥ 85%（`l1_history_match_threshold`）的当前帧都能匹配到历史指纹，则判定命中。
-
-**建议准备：**
-- 2-3 个明确违规视频（仿冒/金融诈骗）
-- 2-3 个明确安全视频
-- 放到 `history_videos/` 目录（不需要提交到 git）
-
----
-
-### 4.4 ASR 模型（让 L2 ASR 真实转写）
-
-**需要做什么：** 什么都不用手动下载。faster-whisper 首次运行时会自动从 HuggingFace 下载模型到 `~/.cache/huggingface/hub/`。
-
-**配置（`config/runtime.yaml`）：**
-
-```yaml
-enable_asr: true
-asr_model_size: small      # 首次下载 ~500MB
-asr_device: auto           # 有 GPU 自动用 cuda，没有用 cpu
-asr_compute_type: int8_float16
-```
-
-**4090 推荐配置：**
-
-```yaml
-asr_model_size: large-v3   # 首次下载 ~3GB，精度最高
-asr_device: cuda
-asr_compute_type: float16
-```
-
-**如果下载慢：** 可以设置 HuggingFace 镜像：
+### Step 4: 放入视频文件
 
 ```bash
-export HF_ENDPOINT=https://hf-mirror.com
+# 待审核视频放到 samples/ 目录
+samples/demo_001.mp4
+samples/demo_002.mp4
+...
+samples/demo_014.mp4
+
+# 历史违规/安全视频放到 history_videos/ 目录
+history_videos/violation_001.mp4
+history_videos/violation_002.mp4
+history_videos/safe_001.mp4
 ```
 
-**验证方式：** 确保视频文件存在 + ffmpeg 已安装，运行 review 后看日志是否有 `faster-whisper transcription` 相关输出（而非 `fallback_reason="no_audio"`）。
+命名规则：
+- 待审核视频：`samples/demo_XXX.mp4`，与 `samples/demo_XXX.json` 中的 `media_path` 对应
+- 历史视频：`history_videos/violation_XXX.mp4` 或 `history_videos/safe_XXX.mp4`
 
----
-
-### 4.5 OCR（可选，让 L2 OCR 真实识别画面文字）
-
-当前默认 `enable_ocr: false`，使用 `mock_ocr_texts`。
-
-**如果要启用真实 OCR：**
+### Step 5: 生成历史指纹库
 
 ```bash
-pip install paddlepaddle paddleocr
-```
-
-修改 `config/runtime.yaml`：
-
-```yaml
-enable_ocr: true
-```
-
-**注意：** PaddleOCR 首次运行也会自动下载模型（~100MB）。GPU 环境下用 `paddlepaddle-gpu`。
-
----
-
-### 4.6 文本 Embedding（让 L3 语义相似度真实计算）
-
-当前默认 fallback 到 token overlap（按字符计算 Jaccard）。
-
-**如果要启用真实 embedding：**
-
-```bash
-pip install sentence-transformers
-```
-
-修改 `config/runtime.yaml`：
-
-```yaml
-enable_text_embedding: true
-```
-
-首次运行会自动下载 `all-MiniLM-L6-v2` 模型（~90MB）。
-
----
-
-### 4.7 政策文档与历史案例（让 L4 Agent RAG 有真实内容可检索）
-
-当前 `data/policy_docs.json` 和 `data/history_cases.json` 已有 demo 数据，但内容较少。
-
-**如果要增强：**
-
-`data/policy_docs.json` 格式：
-```json
-[
-  {"id": "policy_xxx", "category": "品牌授权|金融资质|医疗资质|私域引流", "text": "完整的政策条文..."}
-]
-```
-
-`data/history_cases.json` 格式：
-```json
-[
-  {"case_id": "case_xxx", "category": "箱包|金融|医疗", "decision": "REJECT|APPROVE|HUMAN_REVIEW", "text": "案例描述..."}
-]
-```
-
-**建议：** 把你们公司真实的审核政策文档（脱敏后）按条目拆分放进去，每条 200-500 字。L4 Agent 会用简单文本检索（Jaccard 相似度）找 top-5 相关条目作为 prompt 上下文。
-
----
-
-### 4.8 优化日志（让 L5 策略 Agent 有真实数据分析）
-
-当前 `data/optimization_logs.json` 有 10 条 demo 数据。
-
-**格式：**
-```json
-[
-  {
-    "ad_id": "xxx",
-    "type": "false_approve|human_reject|appeal_overturn|false_reject",
-    "text": "广告文案原文...",
-    "decision_path": ["L1", "L2", "L3"],
-    "final_decision": "REJECT|APPROVE"
-  }
-]
-```
-
-**建议：** 从真实审核系统导出 50-100 条误判/漏判/申诉日志，L5 Agent 会从中发现高频黑话并建议加入词库。
-
----
-
-## 五、配置文件调优
-
-### 5.1 阈值调优（`config/thresholds.yaml`）
-
-```yaml
-l1_history_match_threshold: 0.85   # 相似帧比例 ≥ 85% 才算命中
-l1_hamming_threshold: 8            # 单帧 pHash 汉明距离 ≤ 8 算相似
-l2_reject_score: 60                # L2 层暂未使用（L2 靠 hard_block 直接 REJECT）
-l3_reject_score: 120               # 风险分 ≥ 120 直接拒绝
-l3_approve_score: 20               # 风险分 ≤ 20 且无冲突信号 → 通过
-agent_confidence_auto_threshold: 0.7  # Agent 置信度 < 0.7 → 转人工
-```
-
-### 5.2 关键词调优（`config/keywords.yaml`）
-
-三类词库：
-- `hard_block`：命中即 REJECT（"1:1复刻"、"高仿"、"A货"等）
-- `normalized_block`：归一化后命中即 REJECT（"1比1"→"1:1"）
-- `suspicious_slang`：只加 15 分进入 L3（"柜姐渠道"、"原厂尾单"等）
-
-**你可以根据业务需要增删词条。**
-
-### 5.3 类目规则（`config/category_rules.yaml`）
-
-定义每个类目需要什么资质、哪些宣称是敏感的。可以按你们的实际审核标准调整。
-
----
-
-## 六、完整运行验证
-
-```bash
-# 1. 确认环境
-python --version          # 3.10+
-ffmpeg -version           # 有输出
-nvidia-smi                # （可选）有 GPU
-
-# 2. 确认 .env 配置
-cat .env                  # LLM_API_KEY 已填
-
-# 3. 跑 5 条广告审核
-python main.py review --meta samples/ad_001.json
-python main.py review --meta samples/ad_002.json
-python main.py review --meta samples/ad_003.json
-python main.py review --meta samples/ad_004.json
-python main.py review --meta samples/ad_005.json
-
-# 4. 跑申诉复核
-python main.py appeal --appeal samples/appeal_001.json
-python main.py appeal --appeal samples/appeal_002.json
-
-# 5. 跑策略优化
-python main.py optimize --logs data/optimization_logs.json
-
-# 6. 查看输出
-ls outputs/
-cat outputs/review_result_ad_001.json
-cat outputs/strategy_suggestion.json
-cat outputs/candidate_keywords.yaml
-```
-
----
-
-## 七、各环节"真实运行"检查表
-
-| 环节 | mock 状态标志 | 真实运行条件 |
-|------|-------------|-------------|
-| MediaPreprocessor 抽帧 | `[MediaPreprocessor] mock=True` | `media_path` 指向真实 .mp4 文件 |
-| ffmpeg 音频提取 | 日志 `skip audio extraction` | 系统已安装 ffmpeg |
-| L1 历史召回 | `decision=NEXT reason=历史指纹未命中` | `data/history_fingerprints.json` 含真实 pHash |
-| L2 ASR | 日志 `fallback_reason=no_audio` | ffmpeg 已装 + 视频存在 + `enable_asr: true` |
-| L2 OCR | 使用 `mock_ocr_texts` | `enable_ocr: true` + PaddleOCR 已装 |
-| L3 TextEmbedding | `backend=token_overlap` | `enable_text_embedding: true` + sentence-transformers 已装 |
-| L4/L5 Agent | `mode=mock` | `.env` 中 `LLM_API_KEY` 已配置 |
-
-**当所有环节都真实运行时，你会看到：**
-- `[MediaPreprocessor] mock=False frames=8-12 audio=outputs/cache/xxx/audio.wav`
-- `[L1Recall] decision=NEXT`（除非命中历史指纹）
-- `[L2RuleEngine]` 的 evidence 中有真实 OCR/ASR 文本
-- `[L3RiskFusion]` 的 embedding 用 sbert 而非 token_overlap
-- `[L4AgentReview]` 的 reason 是自然语言（来自真实 LLM）
-
----
-
-## 八、模型下载汇总
-
-| 模型 | 大小 | 自动下载 | 手动下载方式 |
-|------|------|---------|-------------|
-| faster-whisper small | ~500MB | ✅ 首次运行自动 | `huggingface-cli download Systran/faster-whisper-small` |
-| faster-whisper large-v3 | ~3GB | ✅ 首次运行自动 | `huggingface-cli download Systran/faster-whisper-large-v3` |
-| sentence-transformers all-MiniLM-L6-v2 | ~90MB | ✅ 首次运行自动 | `python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"` |
-| PaddleOCR 中文模型 | ~100MB | ✅ 首次运行自动 | — |
-
-所有模型缓存在 `~/.cache/huggingface/hub/` 或 `~/.paddleocr/`，不需要手动放到项目目录。
-
-**如果服务器无法访问 HuggingFace：**
-
-```bash
-export HF_ENDPOINT=https://hf-mirror.com
-# 然后正常运行，模型会从镜像下载
-```
-
----
-
-## 九、FAQ
-
-**Q: 我只想验证 Agent 效果，不想折腾视频/ASR/OCR？**
-
-保持 `media_path` 指向不存在的文件即可。系统会用 `mock_asr_text` 和 `mock_ocr_texts` 继续跑，只有 Agent 层用真实 LLM。
-
-**Q: 我想让 L1 命中，怎么做？**
-
-1. 用上面的脚本对一个视频生成指纹写入 `data/history_fingerprints.json`
-2. 然后用同一个视频（或高度相似的视频）作为输入
-3. L1 会命中并直接 REJECT/APPROVE
-
-**Q: 我用 Ollama 本地模型行不行？**
-
-完全可以。Ollama 暴露 OpenAI 兼容 API：
-
-```env
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_API_KEY=ollama
-LLM_MODEL=qwen2.5:7b
-```
-
-**Q: 风险分太高/太低，样例路径不对？**
-
-调 `config/thresholds.yaml` 的 `l3_reject_score` 和 `l3_approve_score`。当前默认 reject=120, approve=20。
-
-**Q: 如何添加新的违规关键词？**
-
-编辑 `config/keywords.yaml`，在对应类别下添加 `{word: "新词", category: "all"}`。重启即生效。
-
-
----
-
-## 十、傻瓜式操作步骤（从零到全部环节跑通）
-
-```bash
-# === Step 1: 克隆 + 装依赖 ===
-git clone <your-repo-url> ad-review-demo
-cd ad-review-demo
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-pip install sentence-transformers  # 可选，让 L3 embedding 真实运行
-sudo apt install -y ffmpeg         # 让 ASR 真实运行
-
-# === Step 2: 配置 LLM ===
-cp .env.example .env
-# 编辑 .env，填入你的 LLM API Key
-# 推荐 DeepSeek: LLM_BASE_URL=https://api.deepseek.com/v1  LLM_MODEL=deepseek-chat
-
-# === Step 3: 准备视频文件 ===
-mkdir -p samples history_videos
-
-# 把你的视频放进来（文件名对应 JSON 中的 media_path）：
-# samples/real_001.mp4 ~ real_008.mp4
-# history_videos/violation_001.mp4, violation_002.mp4, safe_001.mp4
-
-# === Step 4: 生成历史指纹库 ===
 python scripts/build_history_fingerprints.py
-# 输出: data/history_fingerprints.json（含真实 pHash）
+```
 
-# === Step 5: 生成广告 JSON ===
+输出：`data/history_fingerprints.json`（L1 层用于 MD5/pHash 匹配的指纹库）
+
+### Step 6: 生成广告 JSON（可选，已有 demo 数据可跳过）
+
+```bash
 python scripts/generate_ad_meta.py
-# 输出: samples/real_001.json ~ real_008.json
+```
 
-# === Step 6: 一键跑通全部 demo ===
+输出：为 `samples/` 下的视频生成配套的广告元信息 JSON 文件。
+
+> 项目已自带 14 条 demo 数据（demo_001~014.json），如果只跑 demo 可跳过此步。
+
+### Step 7: 一键验证全部样例
+
+```bash
 python scripts/run_all_demo.py
 ```
 
----
+该脚本会：
+1. 依次审核所有广告样例
+2. 执行申诉复核
+3. 执行策略优化分析
+4. 打印汇总报告（覆盖了哪些层、哪些决策类型）
 
-## 十一、关于 pHash 实现细节
+### Step 8: 查看输出
 
-### 是否降采样了？
-
-**是的。** 流程如下：
-
-```
-原始帧 (如 1920×1080)
-    ↓ cv2.resize(frame, (64, 64))    ← 降采样到 64×64
-    ↓ cv2.cvtColor(BGR → GRAY)       ← 转灰度
-    ↓ imagehash.phash(PIL.Image)      ← 计算感知哈希
-    ↓ 输出 16 位 hex 字符串 (如 "a1b2c3d4e5f6a7b8")
-```
-
-- resize 尺寸由 `config/runtime.yaml` 的 `phash_resize: 64` 控制
-- 不会对原始大图直接计算 pHash
-- 去重阈值：两帧 pHash 汉明距离 ≤ 4 视为相似，只保留一个
-
-### 为什么没有 MD5？
-
-当前设计中 **L1 层只用 pHash**（视觉相似度匹配），没有文件级 MD5。原因：
-
-- **pHash** 能识别"视觉相似但文件不同"的素材（如重新编码、加水印、裁剪后的翻拍）
-- **MD5** 只能识别"文件完全相同"的素材（改一个像素就不匹配了）
-
-如果你需要 MD5 快速判重（文件完全相同的情况），可以告诉我，我加一个 MD5 前置检查。但对于广告审核场景，pHash 更有价值。
-
-### L1 匹配算法
-
-```
-对当前视频的每个关键帧 pHash：
-    检查是否与历史指纹库中任一帧的汉明距离 ≤ 8 (l1_hamming_threshold)
-    
-相似帧比例 = 匹配成功的帧数 / 当前视频总关键帧数
-
-如果 相似帧比例 ≥ 0.85 (l1_history_match_threshold)：
-    → 命中历史指纹
-    → 根据 label 返回 REJECT 或 APPROVE
-否则：
-    → NEXT（进入 L2）
-```
-
----
-
-## 十二、data/ 目录数据说明
-
-| 文件 | 用途 | 是否需要你准备 |
-|------|------|--------------|
-| `history_fingerprints.json` | L1 历史指纹库 | **需要**：运行 `scripts/build_history_fingerprints.py` 生成 |
-| `policy_docs.json` | L4 Agent 的政策文档 RAG | 已有 8 条 demo 数据，可直接用 |
-| `history_cases.json` | L4 Agent 的历史案例 RAG | 已有 5 条 demo 数据，可直接用 |
-| `optimization_logs.json` | L5 策略优化输入 | 已有 10 条 demo 数据，可直接用 |
-
-### policy_docs.json（已生成，可直接用）
-
-包含 8 条审核政策文档，覆盖：
-- 品牌授权政策（2 条）
-- 金融资质要求（2 条）
-- 医疗资质要求（2 条）
-- 私域引流管控（2 条）
-
-L4 Agent 会用 Jaccard 文本相似度检索 top-5 相关条目作为 prompt 上下文。如果你有更详细的公司内部审核政策，可以追加到这个 JSON 里。
-
-### history_cases.json（已生成，可直接用）
-
-包含 5 条历史审核案例，覆盖箱包/金融/日用品/医疗类目。L4 Agent 用于参考历史判例。
-
-### optimization_logs.json（已生成，可直接用）
-
-包含 10 条模拟审核日志，频繁出现"柜姐渠道/原厂尾单/内部福利/懂的来/渠道价"等黑话。L5 策略 Agent 会从中发现这些候选词并建议加入 suspicious_slang。
-
----
-
-## 十三、模型下载汇总
-
-| 模型 | 触发条件 | 大小 | 自动下载 |
-|------|---------|------|---------|
-| faster-whisper small | `enable_asr: true` + 有真实视频 | ~500MB | ✅ 首次自动 |
-| faster-whisper large-v3 | `asr_model_size: large-v3` | ~3GB | ✅ 首次自动 |
-| sentence-transformers all-MiniLM-L6-v2 | `enable_text_embedding: true` + 已装库 | ~90MB | ✅ 首次自动 |
-| PaddleOCR 中文模型 | `enable_ocr: true` + 已装库 | ~100MB | ✅ 首次自动 |
-
-**所有模型都是首次运行时自动下载，不需要手动操作。**
-
-如果服务器访问 HuggingFace 慢：
 ```bash
-export HF_ENDPOINT=https://hf-mirror.com
+ls outputs/
 ```
+
+输出文件：
+- `outputs/review_result_demo_XXX.json` — 每条广告的审核结果
+- `outputs/appeal_result_appeal_XXX.json` — 申诉复核结果
+- `outputs/strategy_suggestion.json` — 策略优化建议
+- `outputs/candidate_keywords.yaml` — 候选关键词建议
 
 ---
 
-## 十四、各环节"真实运行"检查表
+## 视频文件准备指南
 
-运行 `python scripts/run_all_demo.py` 后，对照以下表格确认每个环节是否真实运行：
+### 文件存放位置
 
-| 环节 | mock 标志（说明没真实跑） | 真实运行条件 |
-|------|------------------------|-------------|
-| 视频抽帧 | `mock=True` | media_path 指向真实 .mp4 |
-| pHash 指纹 | frames=0 | 视频存在且能被 OpenCV 打开 |
-| ffmpeg 音频 | 无 audio= 输出 | 系统已装 ffmpeg |
-| L1 历史召回 | `decision=NEXT` 且 reason 含"未命中" | history_fingerprints.json 含真实 pHash + 有相同视频输入 |
-| ASR 转写 | 日志含 `fallback_reason` | ffmpeg 已装 + 视频存在 + enable_asr=true |
-| OCR 识别 | 使用 mock_ocr_texts | enable_ocr=true + PaddleOCR 已装 |
-| 文本 Embedding | `backend=token_overlap` | enable_text_embedding=true + sentence-transformers 已装 |
-| L4/L5 Agent | 日志 `mode=mock` | .env 中 LLM_API_KEY 已配置 |
-| QR 检测 | 无 QR 命中 | 视频画面中确实有二维码 |
+| 目录 | 用途 | 示例 |
+|------|------|------|
+| `samples/` | 待审核的广告视频 | `samples/demo_001.mp4` |
+| `history_videos/` | 历史违规/安全视频（用于 L1 指纹库） | `history_videos/violation_001.mp4` |
+
+### 命名规则
+
+- 待审核视频：`demo_001.mp4` ~ `demo_014.mp4`，文件名必须与对应 JSON 中 `media_path` 字段一致
+- 历史违规视频：`violation_XXX.mp4`
+- 历史安全视频：`safe_XXX.mp4`
+
+### 特殊要求的视频
+
+| 视频 | 特殊要求 | 原因 |
+|------|----------|------|
+| `demo_001.mp4` | 必须与 `history_videos/violation_001.mp4` 完全相同（同一文件复制） | 测试 L1 MD5 精确匹配 |
+| `demo_002.mp4` | 必须与某个历史违规视频视觉高度相似（如重编码/加水印版本） | 测试 L1 pHash 相似匹配 |
+| `demo_005.mp4` | 视频画面中必须包含微信二维码 | 测试 L2 QR 私域引流检测 |
+
+> 其他视频无特殊要求，任意广告视频即可。没有视频时系统自动走 mock 模式。
+
+---
+
+## 各环节真实运行检查表
+
+| 环节 | 真实运行条件 | 验证方法 | mock 模式行为 |
+|------|-------------|----------|---------------|
+| L1 MD5 匹配 | 视频文件存在 + 指纹库有对应 MD5 | demo_001 输出 `terminated_at=L1` | 跳过，输出 NEXT |
+| L1 pHash 匹配 | 视频文件存在 + 指纹库有相似帧 | demo_002 输出 `terminated_at=L1` | 跳过，输出 NEXT |
+| L2 OCR | `enable_ocr: true` + PaddleOCR 已安装 | 日志显示 `mock=False` | 使用 mock_ocr_texts |
+| L2 ASR | 视频有音轨 + faster-whisper 正常 | 日志显示 `mock=False` | 使用 mock_asr_text |
+| L2 QR | 视频画面含二维码 | demo_005 输出 QR 检测结果 | 不触发 |
+| L2 关键词 | 文本中含 hard_block 词 | demo_003/004 输出 `terminated_at=L2` | 正常触发 |
+| L3 风险融合 | L2 输出 NEXT | demo_007~012 进入 L3 | 正常触发 |
+| L4 Agent | L3 输出 AGENT_REVIEW + LLM API 可用 | demo_012~014 进入 L4 | API 不可用时降级 HUMAN_REVIEW |
+| L5 申诉 | LLM API 可用 | appeal_001 有输出 | API 不可用时报错 |
+| L5 策略 | LLM API 可用 | strategy_suggestion.json 有内容 | API 不可用时报错 |
+
+---
+
+## 配置调优
+
+### 阈值调整（`config/thresholds.yaml`）
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `l1_history_match_threshold` | 0.85 | pHash 相似度阈值（越低越严格） |
+| `l1_hamming_threshold` | 8 | pHash 汉明距离阈值（越大越宽松） |
+| `l2_reject_score` | 60 | L2 直接拒绝的风险分阈值 |
+| `l3_reject_score` | 120 | L3 拒绝阈值 |
+| `l3_approve_score` | 20 | L3 通过阈值（≤ 此分数直接通过） |
+| `agent_confidence_auto_threshold` | 0.7 | L4 Agent 自动决策的置信度阈值 |
+
+### 关键词管理（`config/keywords.yaml`）
+
+三级关键词体系：
+- `hard_block`：命中即 REJECT，无需累加（如"高仿"、"A货"）
+- `normalized_block`：文本归一化后匹配即 REJECT（如"1比1"→"1:1"）
+- `suspicious_slang`：每命中一个加 15 分，累加后进入 L3（如"柜姐渠道"、"懂的来"）
+
+### 类目规则（`config/category_rules.yaml`）
+
+定义每个类目的必要资质和敏感宣称词：
+- 箱包：需 `brand_authorization`
+- 金融：需 `financial_license`
+- 医疗：需 `medical_license`
+
+---
+
+## 模型下载说明
+
+| 模型 | 用途 | 下载方式 |
+|------|------|----------|
+| faster-whisper (small) | ASR 语音转写 | 首次运行自动从 HuggingFace 下载 |
+| PaddleOCR | 文字识别（可选） | `pip install paddleocr` 后自动下载 |
+| sentence-transformers | 文本嵌入相似度（可选） | `pip install sentence-transformers` 后自动下载 |
+
+### HuggingFace 镜像设置（国内加速）
+
+```bash
+# 方式 1: 环境变量
+export HF_ENDPOINT=https://hf-mirror.com
+
+# 方式 2: 写入 .env
+echo "HF_ENDPOINT=https://hf-mirror.com" >> .env
+```
+
+> 所有模型首次运行时自动下载，无需手动操作。国内用户建议设置镜像加速。
+
+---
+
+## LLM API 配置
+
+L4 Agent 和 L5 策略层需要 LLM API。支持任何 OpenAI 兼容接口，timeout 已设为 120 秒（火山引擎冷启动可能较慢）。
+
+### 火山引擎 Ark
+
+```
+LLM_BASE_URL=https://ark.cn-beijing.volces.com/api/v3
+LLM_API_KEY=your-ark-api-key
+LLM_MODEL=ep-xxxxxxxx-xxxx
+```
+
+### DeepSeek
+
+```
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_API_KEY=your-deepseek-key
+LLM_MODEL=deepseek-chat
+```
+
+### OpenAI
+
+```
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-xxxxxxxx
+LLM_MODEL=gpt-4o-mini
+```
+
+### Ollama（本地部署）
+
+```
+LLM_BASE_URL=http://localhost:11434/v1
+LLM_API_KEY=ollama
+LLM_MODEL=qwen2.5:14b
+```
+
+> L4 Agent 支持多模态看图（发送视频关键帧图片），建议使用支持视觉的模型（如 gpt-4o、qwen-vl）。
+> 工具调用（function calling）需要模型支持 tools 参数。
+> timeout=120 秒，火山引擎首次调用可能需要等待冷启动。
+
+---
+
+## FAQ
+
+**Q: 完全没有视频文件，能跑通吗？**
+A: 能。系统自动走 mock 模式，L2~L5 全链路正常运行。只有 L1 历史匹配和 L2 QR 检测在 mock 模式下不触发。
+
+**Q: 只有 LLM API Key 没有视频，哪些环节能真实运行？**
+A: L2 关键词/类目规则（用 mock 文本）、L3 风险融合、L4 Agent 审核（用文本信息研判）、L5 申诉/策略 全部真实运行。
+
+**Q: 火山引擎 Ark 调用很慢怎么办？**
+A: 首次调用可能触发冷启动，需要 30~60 秒。系统 timeout 已设为 120 秒。如果仍然超时，检查网络或换用 DeepSeek/OpenAI。
+
+**Q: L4 Agent 的多模态看图需要什么模型？**
+A: 需要支持图片输入的视觉模型（如 gpt-4o、gpt-4o-mini、qwen-vl-plus）。如果模型不支持图片，Agent 会仅基于文本信息审核。
+
+**Q: L4 Agent 的工具调用（function calling）是什么？**
+A: Agent 可以调用预定义的工具函数（如查询品牌数据库、验证资质、搜索历史违规记录），获取额外信息后做出更准确的判断。需要模型支持 OpenAI tools 格式。
+
+**Q: 如何确认每一层都真实运行了？**
+A: 运行 `python scripts/run_all_demo.py`，查看汇总报告中"覆盖的终止层"是否包含 L1~L4。如果 L1 未覆盖，说明需要放入真实视频并生成指纹库。
+
+**Q: PaddleOCR 安装失败怎么办？**
+A: PaddleOCR 是可选依赖。不安装时系统使用 JSON 中的 `mock_ocr_texts` 字段。如需真实 OCR，参考 PaddlePaddle 官方文档安装。
+
+**Q: 如何添加新的测试视频？**
+A: 三步操作：
+1. 把视频放到 `samples/` 目录，命名为 `real_XXX.mp4`
+2. 编辑 `scripts/generate_ad_meta.py` 中的 `AD_TEMPLATES` 列表，添加对应元信息
+3. 运行 `python scripts/generate_ad_meta.py` 生成 JSON
+
+**Q: 如何测试 L1 历史召回？**
+A: 四步操作：
+1. 把违规视频放到 `history_videos/` 目录
+2. 运行 `python scripts/build_history_fingerprints.py` 生成指纹库
+3. 把相同视频（或重编码版本）复制到 `samples/` 作为待审核视频
+4. 运行 `python main.py review --meta samples/对应的.json`
+
+**Q: 输出的 JSON 结构是什么样的？**
+A: 每个审核结果包含 `ad_id`、`final_decision`（APPROVE/REJECT/HUMAN_REVIEW）、`terminated_at`（L1~L4）、`layers`（每层的详细信号和分数）。
