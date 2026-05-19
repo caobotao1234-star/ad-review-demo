@@ -129,12 +129,16 @@ class L2ASR:
         if cfg == "cuda":
             if not is_cuda_available():
                 raise ConfigError("asr_device=cuda but CUDA not available")
-            return "cuda", "float16"
+            return "cuda", self.runtime.asr_compute_type if self.runtime.asr_compute_type != "int8" else "float16"
 
         if cfg == "cpu":
             return "cpu", "int8"
 
         # auto mode
         if is_cuda_available():
-            return "cuda", "float16"
+            # Use configured compute_type, but avoid int8 on GPU (needs sm_89+)
+            compute = self.runtime.asr_compute_type
+            if compute == "int8":
+                compute = "float16"  # int8 only works on 4090/A100+
+            return "cuda", compute
         return "cpu", "int8"

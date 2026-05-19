@@ -51,6 +51,16 @@ class L2OCR:
 
     def __init__(self, runtime: RuntimeConfig) -> None:
         self.runtime = runtime
+        self._ocr_model = None  # Lazy-loaded PaddleOCR instance
+
+    def _get_ocr_model(self):
+        """Lazy-load PaddleOCR model (loaded once, reused across calls)."""
+        if self._ocr_model is None:
+            from paddleocr import PaddleOCR
+            logger.info("Loading PaddleOCR model (first call, will be reused)...")
+            self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+            logger.info("PaddleOCR model loaded successfully")
+        return self._ocr_model
 
     def extract(self, ad: AdMeta, media: MediaResult) -> list[FrameOCR]:
         """Extract OCR texts from sampled frames.
@@ -58,15 +68,33 @@ class L2OCR:
         Returns a list of FrameOCR, one per sampled frame.
         Falls back to mock_ocr_texts when OCR is disabled or PaddleOCR unavailable.
         """
-        # Determine if we should use real OCR
         use_real_ocr = self.runtime.enable_ocr and _check_paddleocr()
 
         if not use_real_ocr:
             return self._mock_from_ad(ad, media)
 
-        # Real OCR mode (TODO: implement actual PaddleOCR calls)
-        # For now, fall back to mock as PaddleOCR integration is a placeholder
-        return self._mock_from_ad(ad, media)
+        # Real OCR mode: run PaddleOCR on each sampled frame
+        if media.mock or not media.sampled_frames:
+            return self._mock_from_ad(ad, media)
+
+        results: list[FrameOCR] = []
+        ocr_model = self._get_ocr_model()
+
+        for frame_ref in media.sampled_frames:
+            try:
+                ocr_result = ocr_model.ocr(frame_ref.frame_path, cls=True)
+                texts = []
+                if ocr_result and ocr_result[0]:
+                    for line in ocr_result[0]:
+                        if line and len(line) >= 2:
+                            text_content = line[1][0] if isinstance(line[1], (list, tuple)) else str(line[1])
+                            texts.append(text_content)
+                results.append(FrameOCR(frame_id=frame_ref.frame_id, texts=texts))
+            except Exception as e:
+                logger.warning("OCR failed on %s: %s", frame_ref.frame_id, e)
+                results.append(FrameOCR(frame_id=frame_ref.frame_id, texts=[]))
+
+        return results
 
     # ------------------------------------------------------------------
     # Internal
