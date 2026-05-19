@@ -1,0 +1,26 @@
+{
+  "ad_id": "ad_001",
+  "media_type": "video",
+  "media_path": "samples/ad_001.mp4",
+  "title": "官方正品 专柜品质 大牌箱包限时特惠",
+  "description": "专柜同款品质保证，正品保障，支持验货，限时折扣不容错过",
+  "category": "箱包",
+  "brand": "LV",
+  "mock_asr_text": "这款包包是官方正品，专柜品质，喜欢的姐妹可以放心入手",
+  "mock_ocr_texts": ["官方正品", "专柜品质", "限时特惠"],
+  "landing_page": {
+    "url": "https://example.com/bag-001",
+    "text": "渠道货源，原厂尾单，品质保证，详情微信咨询，支持验货",
+    "price": 899.0
+  },
+  "merchant": {
+    "merchant_id": "m_001",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 1
+  }
+}

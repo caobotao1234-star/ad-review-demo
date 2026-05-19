@@ -1,0 +1,26 @@
+{
+  "ad_id": "ad_004",
+  "media_type": "video",
+  "media_path": "samples/ad_004.mp4",
+  "title": "稳赚理财项目 保本高收益 日入过万",
+  "description": "零风险投资，保本保息，年化收益高达50%，稳赚不赔",
+  "category": "金融",
+  "brand": "",
+  "mock_asr_text": "这个理财项目稳赚不赔，保本高收益，每天轻松日入过万",
+  "mock_ocr_texts": ["稳赚不赔", "保本高收益", "日入过万"],
+  "landing_page": {
+    "url": "https://example.com/finance-004",
+    "text": "零门槛投资理财，保本保息，年化收益50%以上，立即开户享受高收益",
+    "price": null
+  },
+  "merchant": {
+    "merchant_id": "m_004",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 2
+  }
+}

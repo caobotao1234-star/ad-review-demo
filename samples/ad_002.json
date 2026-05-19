@@ -1,0 +1,26 @@
+{
+  "ad_id": "ad_002",
+  "media_type": "video",
+  "media_path": "samples/ad_002.mp4",
+  "title": "顶级1:1复刻大牌箱包 高仿LV经典款",
+  "description": "A货精品，做工精细，与正品无差别，懂行的来",
+  "category": "箱包",
+  "brand": "",
+  "mock_asr_text": "这款是一比一高仿复刻，A货里面的顶级品质",
+  "mock_ocr_texts": ["1:1复刻", "高仿", "A货"],
+  "landing_page": {
+    "url": "https://example.com/bag-002",
+    "text": "高仿精品箱包，一比一复刻，厂家直销",
+    "price": 350.0
+  },
+  "merchant": {
+    "merchant_id": "m_002",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 3
+  }
+}

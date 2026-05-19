@@ -1,0 +1,15 @@
+# Core dependencies
+opencv-python
+imagehash
+Pillow
+numpy
+pyyaml
+pydantic
+pytest
+hypothesis
+python-dotenv
+faster-whisper
+
+# Optional dependencies (install manually if needed):
+# paddleocr
+# sentence-transformers

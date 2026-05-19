@@ -1,0 +1,35 @@
+# Keyword configuration for ad-review-layered-decision
+# Three-tier keyword library: hard_block, normalized_block, suspicious_slang.
+#
+# hard_block: Immediate REJECT on match.
+# normalized_block: REJECT after text normalization match.
+# suspicious_slang: Adds medium risk score, routes to L3 (no direct REJECT).
+
+hard_block:
+  - {word: "1:1复刻", category: "all"}
+  - {word: "高仿", category: "all"}
+  - {word: "A货", category: "all"}
+  - {word: "顶级复刻", category: "all"}
+  - {word: "原版开模", category: "all"}
+  - {word: "稳赚不赔", category: "金融"}
+  - {word: "保本保息", category: "金融"}
+  - {word: "高收益零风险", category: "金融"}
+  - {word: "根治", category: "医疗"}
+  - {word: "7天瘦10斤", category: "医疗"}
+
+normalized_block:
+  - {word: "1比1", category: "all"}
+  - {word: "壹比壹", category: "all"}
+  - {word: "v信", category: "all"}
+  - {word: "Ｖ信", category: "all"}
+  - {word: "vx", category: "all"}
+
+suspicious_slang:
+  - {word: "柜姐渠道", category: "箱包"}
+  - {word: "原厂尾单", category: "箱包"}
+  - {word: "懂的来", category: "箱包"}
+  - {word: "渠道价", category: "箱包"}
+  - {word: "内部福利", category: "all"}
+  - {word: "加微信", category: "all"}
+  - {word: "私聊", category: "all"}
+  - {word: "扫码咨询", category: "all"}

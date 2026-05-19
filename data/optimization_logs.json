@@ -1,0 +1,72 @@
+[
+  {
+    "ad_id": "log_ad_001",
+    "type": "false_approve",
+    "text": "柜姐渠道拿货，原厂尾单清仓，专柜品质保证，懂的来，不懂勿扰",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "APPROVE"
+  },
+  {
+    "ad_id": "log_ad_002",
+    "type": "human_reject",
+    "text": "内部福利价，渠道价直发，柜姐渠道独家货源，品质一流",
+    "decision_path": ["L1", "L2", "L3", "L4"],
+    "final_decision": "HUMAN_REVIEW"
+  },
+  {
+    "ad_id": "log_ad_003",
+    "type": "appeal_overturn",
+    "text": "原厂尾单特惠，渠道价出，懂的来私聊，数量有限先到先得",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "REJECT"
+  },
+  {
+    "ad_id": "log_ad_004",
+    "type": "false_approve",
+    "text": "柜姐渠道好货，内部福利不容错过，原厂尾单限量发售",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "APPROVE"
+  },
+  {
+    "ad_id": "log_ad_005",
+    "type": "human_reject",
+    "text": "渠道价秒杀，懂的来就懂，不多解释，柜姐渠道正品保障",
+    "decision_path": ["L1", "L2", "L3", "L4"],
+    "final_decision": "HUMAN_REVIEW"
+  },
+  {
+    "ad_id": "log_ad_006",
+    "type": "appeal_overturn",
+    "text": "内部福利专享，原厂尾单清库存，渠道价比专柜便宜一半",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "REJECT"
+  },
+  {
+    "ad_id": "log_ad_007",
+    "type": "false_approve",
+    "text": "懂的来，柜姐渠道直供，渠道价拿货，品质杠杠的",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "APPROVE"
+  },
+  {
+    "ad_id": "log_ad_008",
+    "type": "human_reject",
+    "text": "原厂尾单好货不多说，内部福利限时抢购，识货的来",
+    "decision_path": ["L1", "L2", "L3", "L4"],
+    "final_decision": "HUMAN_REVIEW"
+  },
+  {
+    "ad_id": "log_ad_009",
+    "type": "false_approve",
+    "text": "渠道价出大牌包包，柜姐渠道保真，懂的来不墨迹",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "APPROVE"
+  },
+  {
+    "ad_id": "log_ad_010",
+    "type": "appeal_overturn",
+    "text": "内部福利渠道价，原厂尾单数量有限，柜姐渠道拿货放心买",
+    "decision_path": ["L1", "L2", "L3"],
+    "final_decision": "REJECT"
+  }
+]

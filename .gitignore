@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# Outputs (generated at runtime)
+outputs/cache/
+outputs/review_result_*.json
+outputs/appeal_result_*.json
+outputs/strategy_suggestion.json
+outputs/candidate_keywords.yaml
+
+# Keep the outputs directory itself
+!outputs/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# faster-whisper models
+models/
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage

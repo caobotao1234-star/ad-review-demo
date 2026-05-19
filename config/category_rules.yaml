@@ -1,0 +1,46 @@
+# Category rules configuration for ad-review-layered-decision
+# Defines required qualifications and sensitive claim patterns per category.
+
+rules:
+  - category: "箱包"
+    required_qualifications:
+      - brand_authorization
+    sensitive_claims:
+      - "官方正品"
+      - "专柜品质"
+      - "正品保证"
+      - "品牌同款"
+      - "专柜同款"
+
+  - category: "金融"
+    required_qualifications:
+      - financial_license
+    sensitive_claims:
+      - "稳赚"
+      - "保本"
+      - "高收益"
+      - "零风险"
+      - "保息"
+      - "日入过万"
+
+  - category: "医疗"
+    required_qualifications:
+      - medical_license
+    sensitive_claims:
+      - "治疗"
+      - "根治"
+      - "疗效"
+      - "无副作用"
+      - "7天瘦10斤"
+      - "减肥"
+      - "排毒"
+
+  - category: "功效"
+    required_qualifications:
+      - medical_license
+    sensitive_claims:
+      - "减肥"
+      - "排毒"
+      - "美白"
+      - "祛斑"
+      - "丰胸"

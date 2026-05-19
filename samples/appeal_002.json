@@ -1,0 +1,9 @@
+{
+  "appeal_id": "appeal_002",
+  "ad_id": "ad_003",
+  "merchant_appeal_text": "我们的商品为正规日用品，之前审核被误判为违规。现补充营业执照及品牌授权书，请求重新审核通过。",
+  "extra_materials": [
+    "brand_authorization_certificate_202501.pdf",
+    "business_license_renewed_202501.pdf"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "ad_id": "ad_005",
+  "media_type": "video",
+  "media_path": "samples/ad_005.mp4",
+  "title": "天然植物精华 轻松瘦身不反弹",
+  "description": "纯天然减肥产品，一个月瘦20斤，无副作用，轻松减脂塑形",
+  "category": "日用品",
+  "brand": "",
+  "mock_asr_text": "这款减肥产品效果特别好，一个月就能瘦二十斤，纯天然无副作用",
+  "mock_ocr_texts": ["轻松瘦身", "减肥", "无副作用"],
+  "landing_page": {
+    "url": "https://example.com/slim-005",
+    "text": "快速减肥瘦身，燃脂排毒，一个月减重20斤，治疗肥胖，无需节食运动",
+    "price": 198.0
+  },
+  "merchant": {
+    "merchant_id": "m_005",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}
