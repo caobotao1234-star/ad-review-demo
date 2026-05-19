@@ -43,6 +43,32 @@ class L2ASR:
 
     def __init__(self, runtime: RuntimeConfig) -> None:
         self.runtime = runtime
+        self._model = None  # Lazy-loaded, reused across calls
+        self._device: str | None = None
+        self._compute_type: str | None = None
+
+    def _get_model(self):
+        """Lazy-load the WhisperModel once, reuse on subsequent calls."""
+        if self._model is not None:
+            return self._model
+
+        device, compute_type = self._resolve_device()
+        self._device = device
+        self._compute_type = compute_type
+
+        from faster_whisper import WhisperModel
+
+        logger.info(
+            "Loading faster-whisper model: size=%s device=%s compute=%s",
+            self.runtime.asr_model_size, device, compute_type,
+        )
+        self._model = WhisperModel(
+            self.runtime.asr_model_size,
+            device=device,
+            compute_type=compute_type,
+        )
+        logger.info("faster-whisper model loaded successfully")
+        return self._model
 
     def transcribe(self, ad: AdMeta, media: MediaResult) -> ASRResult:
         """Transcribe audio from media. Falls back to mock_asr_text on failure."""
@@ -62,25 +88,21 @@ class L2ASR:
                 fallback_reason="no_audio",
             )
 
-        # Resolve device
+        # Resolve device (may raise ConfigError for explicit cuda without CUDA)
         try:
-            device, compute_type = self._resolve_device()
+            self._resolve_device()
         except ConfigError as e:
             logger.error("ASR device resolution failed: %s", e)
             raise
 
-        # Attempt real transcription
+        # Attempt real transcription with cached model
         try:
-            from faster_whisper import WhisperModel
-
-            model = WhisperModel(
-                self.runtime.asr_model_size,
-                device=device,
-                compute_type=compute_type,
-            )
+            model = self._get_model()
             segments, _ = model.transcribe(media.audio_path)
             text = " ".join(seg.text for seg in segments)
             return ASRResult(text=text, mock=False)
+        except ConfigError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.warning("faster-whisper transcription failed: %s", e)
             return ASRResult(
