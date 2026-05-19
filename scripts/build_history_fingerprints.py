@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from modules.schemas import AdMeta, Merchant, Qualification, RuntimeConfig
 from modules.media_preprocess import MediaPreprocessor
+from modules.utils import compute_file_md5
 
 # ============================================================
 # 在这里编辑你的历史视频列表
@@ -68,9 +69,12 @@ def main():
             print(f"  ✗ 处理失败: {video['path']} (reason: {result.fallback_reason})")
             continue
 
+        file_md5 = compute_file_md5(video_path)
+
         entry = {
             "history_id": f"hist_{i:03d}",
             "label": video["label"],
+            "md5": file_md5,
             "phash_list": result.fingerprint.phash_list,
             "note": video.get("note", ""),
         }

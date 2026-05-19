@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image
 
 from modules.schemas import AdMeta, FrameRef, MediaResult, RuntimeConfig, VideoFingerprint
-from modules.utils import ensure_dir, hamming_distance, is_ffmpeg_available, safe_filename
+from modules.utils import compute_file_md5, ensure_dir, hamming_distance, is_ffmpeg_available, safe_filename
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,8 @@ class MediaPreprocessor:
         frames_dir: Path,
         ad_dir: Path,
     ) -> MediaResult:
+        file_md5 = compute_file_md5(media_path)
+
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -150,6 +152,7 @@ class MediaPreprocessor:
         return MediaResult(
             ad_id=ad.ad_id,
             mock=False,
+            file_md5=file_md5,
             duration_sec=round(duration_sec, 3),
             fps=round(fps, 2),
             width=width,

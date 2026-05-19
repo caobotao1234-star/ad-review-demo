@@ -3,6 +3,7 @@
     {
       "history_id": "hist_001",
       "label": "violation",
+      "md5": null,
       "phash_list": [
         "a1b2c3d4e5f6a7b8",
         "b2c3d4e5f6a7b8c9",
@@ -15,6 +16,7 @@
     {
       "history_id": "hist_002",
       "label": "violation",
+      "md5": null,
       "phash_list": [
         "e5f6a7b8c9d0e1f2",
         "f6a7b8c9d0e1f2a3"
@@ -25,6 +27,7 @@
     {
       "history_id": "hist_003",
       "label": "safe",
+      "md5": null,
       "phash_list": [
         "1a2b3c4d5e6f7a8b",
         "2b3c4d5e6f7a8b9c",
@@ -35,6 +38,7 @@
     {
       "history_id": "hist_004",
       "label": "safe",
+      "md5": null,
       "phash_list": [
         "4d5e6f7a8b9c0d1e",
         "5e6f7a8b9c0d1e2f"

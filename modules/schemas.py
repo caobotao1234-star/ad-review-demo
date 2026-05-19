@@ -25,6 +25,7 @@ class ReasonCode(str, Enum):
     # L1
     L1_HISTORY_VIOLATION_HIT = "L1_HISTORY_VIOLATION_HIT"
     L1_HISTORY_SAFE_HIT = "L1_HISTORY_SAFE_HIT"
+    L1_MD5_VIOLATION_HIT = "L1_MD5_VIOLATION_HIT"
     L1_NO_MATCH = "L1_NO_MATCH"
     # L2 keywords
     L2_HARD_BLOCK_HIT = "L2_HARD_BLOCK_HIT"
@@ -131,6 +132,7 @@ class MediaResult(BaseModel):
     ad_id: str
     mock: bool = False
     fallback_reason: str | None = None
+    file_md5: str | None = None  # 视频文件 MD5
     duration_sec: float = 0.0
     fps: float = 0.0
     width: int = 0

@@ -31,8 +31,24 @@ class L1Recall:
 
     def recall(self, media: MediaResult) -> LayerResult:
         """Match current media fingerprint against history. Returns LayerResult."""
-        # Guard: mock media or empty phash_list → NEXT
-        if media.mock or not media.fingerprint.phash_list:
+        # Guard: mock media → NEXT
+        if media.mock:
+            reason = render_reason(ReasonCode.L1_NO_MATCH, {})
+            return LayerResult(
+                layer="L1",
+                decision=Decision.NEXT,
+                reason_code=ReasonCode.L1_NO_MATCH,
+                reason=reason,
+            )
+
+        # === MD5 前置否决（最快路径）===
+        if media.file_md5:
+            md5_result = self._check_md5(media.file_md5)
+            if md5_result is not None:
+                return md5_result
+
+        # === pHash 匹配（原有逻辑）===
+        if not media.fingerprint.phash_list:
             reason = render_reason(ReasonCode.L1_NO_MATCH, {})
             return LayerResult(
                 layer="L1",
@@ -109,6 +125,45 @@ class L1Recall:
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _check_md5(self, file_md5: str) -> LayerResult | None:
+        """Check if file MD5 matches any historical violation. Returns LayerResult or None."""
+        for hist in self.fingerprints:
+            hist_md5 = hist.get("md5")
+            if hist_md5 and hist_md5 == file_md5:
+                label = hist.get("label", "unknown")
+                history_id = hist.get("history_id", "unknown")
+                if label == "violation":
+                    reason = render_reason(ReasonCode.L1_MD5_VIOLATION_HIT, {"history_id": history_id, "md5": file_md5})
+                    return LayerResult(
+                        layer="L1",
+                        decision=Decision.REJECT,
+                        reason_code=ReasonCode.L1_MD5_VIOLATION_HIT,
+                        reason=reason,
+                        signals=[Signal(
+                            source=SignalSource.HISTORY,
+                            code=ReasonCode.L1_MD5_VIOLATION_HIT,
+                            detail=f"MD5 exact match: history_id={history_id}",
+                            score_delta=0,
+                        )],
+                        extra={"history_id": history_id, "md5": file_md5, "match_type": "md5_exact"},
+                    )
+                elif label == "safe":
+                    reason = render_reason(ReasonCode.L1_HISTORY_SAFE_HIT, {"history_id": history_id, "ratio": 1.0})
+                    return LayerResult(
+                        layer="L1",
+                        decision=Decision.APPROVE,
+                        reason_code=ReasonCode.L1_HISTORY_SAFE_HIT,
+                        reason=reason,
+                        signals=[Signal(
+                            source=SignalSource.HISTORY,
+                            code=ReasonCode.L1_HISTORY_SAFE_HIT,
+                            detail=f"MD5 exact match (safe): history_id={history_id}",
+                            score_delta=0,
+                        )],
+                        extra={"history_id": history_id, "md5": file_md5, "match_type": "md5_exact"},
+                    )
+        return None  # No MD5 match, continue to pHash
 
     def _load_fingerprints(self, path: Path) -> None:
         """Load history fingerprints from JSON file."""

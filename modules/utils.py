@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 import subprocess
@@ -26,6 +27,15 @@ _REPLACE_TABLE: dict[str, str] = {
     "1比1": "1:1",
     "wx": "微信",
 }
+
+
+def compute_file_md5(path: Path) -> str:
+    """Compute MD5 hash of a file. Reads in 8KB chunks for efficiency."""
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        while chunk := f.read(8192):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 def normalize_text(text: str) -> str:
@@ -58,6 +68,7 @@ _REASON_TEMPLATES: dict[ReasonCode, str] = {
     # L1
     ReasonCode.L1_HISTORY_VIOLATION_HIT: "历史指纹召回命中违规记录，历史ID: {history_id}，相似度: {ratio:.2f}",
     ReasonCode.L1_HISTORY_SAFE_HIT: "历史指纹召回命中安全记录，历史ID: {history_id}，相似度: {ratio:.2f}",
+    ReasonCode.L1_MD5_VIOLATION_HIT: "文件 MD5 完全匹配历史违规记录，历史ID: {history_id}，MD5: {md5}",
     ReasonCode.L1_NO_MATCH: "历史指纹未命中任何记录",
     # L2 keywords
     ReasonCode.L2_HARD_BLOCK_HIT: "命中强违规关键词: {keyword}，来源: {source}",
