@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_014",
+  "media_type": "video",
+  "media_path": "samples/demo_014.mp4",
+  "title": "天然草本 养生保健",
+  "description": "传统配方，调理身体",
+  "category": "医疗",
+  "brand": "",
+  "mock_asr_text": "这款产品是天然草本配方，对身体很好",
+  "mock_ocr_texts": ["天然草本", "养生保健"],
+  "landing_page": {
+    "url": "https://example.com/demo014",
+    "text": "天然草本养生，调理身体，改善亚健康",
+    "price": 168.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_014",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

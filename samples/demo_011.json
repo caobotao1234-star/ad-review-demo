@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_011",
+  "media_type": "video",
+  "media_path": "samples/demo_011.mp4",
+  "title": "官方正品 专柜品质 大牌包包",
+  "description": "内部福利价，渠道价直发",
+  "category": "箱包",
+  "brand": "LV",
+  "mock_asr_text": "官方正品，专柜品质，内部福利价",
+  "mock_ocr_texts": ["官方正品", "内部福利"],
+  "landing_page": {
+    "url": "https://example.com/demo011",
+    "text": "渠道货源，原厂尾单，加微信咨询优惠",
+    "price": 599.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_011",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 3
+  }
+}

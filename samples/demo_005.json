@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_005",
+  "media_type": "video",
+  "media_path": "samples/demo_005.mp4",
+  "title": "品牌箱包 官方渠道",
+  "description": "正品保障，支持验货",
+  "category": "箱包",
+  "brand": "Coach",
+  "mock_asr_text": "欢迎选购，品质保证",
+  "mock_ocr_texts": [],
+  "landing_page": {
+    "url": "https://example.com/demo005",
+    "text": "品牌官方渠道，正品保障",
+    "price": 2599.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_005",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": "valid",
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

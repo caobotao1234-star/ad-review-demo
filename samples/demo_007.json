@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_007",
+  "media_type": "video",
+  "media_path": "samples/demo_007.mp4",
+  "title": "柜姐渠道 品质好货",
+  "description": "渠道价出，品质保证",
+  "category": "箱包",
+  "brand": "",
+  "mock_asr_text": "柜姐渠道拿货，品质杠杠的",
+  "mock_ocr_texts": ["柜姐渠道"],
+  "landing_page": {
+    "url": "https://example.com/demo007",
+    "text": "渠道好货，品质保证，支持验货",
+    "price": 799.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_007",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

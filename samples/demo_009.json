@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_009",
+  "media_type": "video",
+  "media_path": "samples/demo_009.mp4",
+  "title": "免费领取 限量好礼",
+  "description": "限时免费，先到先得",
+  "category": "日用品",
+  "brand": "",
+  "mock_asr_text": "免费领取，数量有限",
+  "mock_ocr_texts": ["免费领取"],
+  "landing_page": {
+    "url": "https://example.com/demo009",
+    "text": "加微信领取，原价299现在免费",
+    "price": 299.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_009",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

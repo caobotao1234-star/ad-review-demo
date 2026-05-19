@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_004",
+  "media_type": "video",
+  "media_path": "samples/demo_004.mp4",
+  "title": "精品箱包 海外代购",
+  "description": "正品代购，品质保障",
+  "category": "箱包",
+  "brand": "",
+  "mock_asr_text": "这个是A货，顶级品质，跟正品没区别",
+  "mock_ocr_texts": [],
+  "landing_page": {
+    "url": "https://example.com/demo004",
+    "text": "海外代购，品质保障",
+    "price": 1099.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_004",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_006",
+  "media_type": "video",
+  "media_path": "samples/demo_006.mp4",
+  "title": "稳赚理财 保本高收益",
+  "description": "年化收益30%以上，零风险投资",
+  "category": "金融",
+  "brand": "",
+  "mock_asr_text": "这个理财项目保本保息，稳赚不赔",
+  "mock_ocr_texts": ["保本高收益", "零风险"],
+  "landing_page": {
+    "url": "https://example.com/demo006",
+    "text": "立即开户，享受高收益理财",
+    "price": null
+  },
+  "merchant": {
+    "merchant_id": "m_demo_006",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

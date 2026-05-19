@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_010",
+  "media_type": "video",
+  "media_path": "samples/demo_010.mp4",
+  "title": "家用厨房清洁剂 强力去油",
+  "description": "天然配方，安全环保，去油效果好",
+  "category": "日用品",
+  "brand": "",
+  "mock_asr_text": "这款清洁剂去油效果特别好，天然配方很安全",
+  "mock_ocr_texts": ["厨房清洁剂", "天然配方"],
+  "landing_page": {
+    "url": "https://example.com/demo010",
+    "text": "厨房清洁剂，天然配方，安全环保，29.9元",
+    "price": 29.9
+  },
+  "merchant": {
+    "merchant_id": "m_demo_010",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": null,
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}

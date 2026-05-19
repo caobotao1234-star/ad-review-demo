@@ -1,0 +1,26 @@
+{
+  "ad_id": "demo_001",
+  "media_type": "video",
+  "media_path": "samples/demo_001.mp4",
+  "title": "大牌包包 限时特惠",
+  "description": "品质保证，限时折扣",
+  "category": "日用品",
+  "brand": "",
+  "mock_asr_text": "普通广告内容",
+  "mock_ocr_texts": [],
+  "landing_page": {
+    "url": "https://example.com/demo001",
+    "text": "限时特惠，品质保证",
+    "price": 199.0
+  },
+  "merchant": {
+    "merchant_id": "m_demo_001",
+    "qualification": {
+      "business_license": "valid",
+      "brand_authorization": "valid",
+      "financial_license": null,
+      "medical_license": null
+    },
+    "history_violation_count": 0
+  }
+}
