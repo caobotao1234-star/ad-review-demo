@@ -97,9 +97,29 @@ class L2ASR:
 
         # Attempt real transcription with cached model
         try:
+            import time as _time
+
+            t_model_start = _time.perf_counter()
             model = self._get_model()
-            segments, _ = model.transcribe(media.audio_path)
-            text = " ".join(seg.text for seg in segments)
+            t_model_end = _time.perf_counter()
+            logger.debug("ASR model get: %.3fs (cached=%s)", t_model_end - t_model_start, self._model is not None)
+
+            t_transcribe_start = _time.perf_counter()
+            segments, info = model.transcribe(media.audio_path)
+            text_parts = []
+            for seg in segments:
+                text_parts.append(seg.text)
+            text = " ".join(text_parts)
+            t_transcribe_end = _time.perf_counter()
+
+            logger.info(
+                "ASR transcription done: audio=%s, device=%s, compute=%s, "
+                "model_get=%.3fs, transcribe=%.3fs, text_len=%d",
+                media.audio_path, self._device, self._compute_type,
+                t_model_end - t_model_start,
+                t_transcribe_end - t_transcribe_start,
+                len(text),
+            )
             return ASRResult(text=text, mock=False)
         except ConfigError:
             raise

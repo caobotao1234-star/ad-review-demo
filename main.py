@@ -5,16 +5,41 @@ import json
 import logging
 import sys
 from pathlib import Path
+from datetime import datetime
 
 from dotenv import load_dotenv
 from pydantic import ValidationError
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    stream=sys.stderr,
-)
+# Setup logging: both stderr and file
+def _setup_logging() -> None:
+    """Configure logging to output to both stderr and logs/ directory."""
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / f"ad_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+    # Root logger
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    # Console handler (INFO level)
+    console = logging.StreamHandler(sys.stderr)
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+
+    # File handler (DEBUG level - captures everything)
+    file_handler = logging.FileHandler(str(log_file), encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s (%(filename)s:%(lineno)d): %(message)s"
+    ))
+
+    root.addHandler(console)
+    root.addHandler(file_handler)
+
+    logging.getLogger("ad_review").info("Log file: %s", log_file)
+
+
+_setup_logging()
 logger = logging.getLogger("ad_review")
 
 

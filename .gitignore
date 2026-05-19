@@ -43,3 +43,6 @@ models/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Logs
+logs/
