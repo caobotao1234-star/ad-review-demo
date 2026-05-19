@@ -27,6 +27,7 @@ class L3Consistency:
 
     def check(self, ad: AdMeta, ad_claim_text: str, l2_signals: list[Signal]) -> ConsistencyResult:
         """Run 5 consistency rules and return aggregated signals + extra score."""
+        logger.debug("L3Consistency.check: ad_id=%s, category=%s", ad.ad_id, ad.category)
         signals: list[Signal] = []
 
         norm_claim = normalize_text(ad_claim_text)
@@ -34,6 +35,7 @@ class L3Consistency:
 
         # Rule 1: 官方正品 in claim but missing brand_authorization
         if "官方正品" in norm_claim and not ad.merchant.qualification.brand_authorization:
+            logger.debug("L3 consistency rule hit: %s (score_delta=%d)", ReasonCode.L3_OFFICIAL_NO_AUTHORIZATION.value, 30)
             signals.append(Signal(
                 source=SignalSource.CONSISTENCY,
                 code=ReasonCode.L3_OFFICIAL_NO_AUTHORIZATION,
@@ -43,6 +45,7 @@ class L3Consistency:
 
         # Rule 2: 正品 in claim and landing contains 渠道货/尾单/复刻
         if "正品" in norm_claim and any(w in norm_landing for w in ["渠道货", "尾单", "复刻"]):
+            logger.debug("L3 consistency rule hit: %s (score_delta=%d)", ReasonCode.L3_OFFICIAL_VS_CHANNEL.value, 20)
             signals.append(Signal(
                 source=SignalSource.CONSISTENCY,
                 code=ReasonCode.L3_OFFICIAL_VS_CHANNEL,
@@ -53,6 +56,7 @@ class L3Consistency:
         # Rule 3: 低价/免费 in claim but landing price > 100
         if any(w in norm_claim for w in ["低价", "免费"]):
             if ad.landing_page.price is not None and ad.landing_page.price > 100:
+                logger.debug("L3 consistency rule hit: %s (score_delta=%d)", ReasonCode.L3_PRICE_CONFLICT.value, 20)
                 signals.append(Signal(
                     source=SignalSource.CONSISTENCY,
                     code=ReasonCode.L3_PRICE_CONFLICT,
@@ -65,6 +69,7 @@ class L3Consistency:
             combined = norm_claim + norm_landing
             if any(w in combined for w in ["减肥", "治疗", "理财", "投资"]):
                 matched = [w for w in ["减肥", "治疗", "理财", "投资"] if w in combined]
+                logger.debug("L3 consistency rule hit: %s (score_delta=%d)", ReasonCode.L3_CATEGORY_MISMATCH.value, 30)
                 signals.append(Signal(
                     source=SignalSource.CONSISTENCY,
                     code=ReasonCode.L3_CATEGORY_MISMATCH,
@@ -75,6 +80,7 @@ class L3Consistency:
         # Rule 5: 平台内购买/站内下单 in claim and landing contains 微信咨询/私聊
         if any(w in norm_claim for w in ["平台内购买", "站内下单"]):
             if any(w in norm_landing for w in ["微信咨询", "私聊"]):
+                logger.debug("L3 consistency rule hit: %s (score_delta=%d)", ReasonCode.L3_PRIVATE_DOMAIN_CONFLICT.value, 25)
                 signals.append(Signal(
                     source=SignalSource.CONSISTENCY,
                     code=ReasonCode.L3_PRIVATE_DOMAIN_CONFLICT,
@@ -83,4 +89,5 @@ class L3Consistency:
                 ))
 
         extra_score = sum(s.score_delta for s in signals)
+        logger.info("L3Consistency done: signals=%d, extra_score=%d", len(signals), extra_score)
         return ConsistencyResult(signals=signals, extra_score=extra_score)

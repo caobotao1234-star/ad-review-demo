@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from modules.schemas import RuntimeConfig
@@ -48,13 +49,21 @@ class L3TextEmbedding:
         """Lazy-load the sbert model."""
         if self._sbert_model is None:
             from sentence_transformers import SentenceTransformer
+            logger.debug("SBERT model loading...")
+            t0 = time.perf_counter()
             self._sbert_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+            elapsed = time.perf_counter() - t0
+            logger.info("SBERT model loaded (%.3fs)", elapsed)
         return self._sbert_model
 
     def similarity(self, ad_claim: str, landing_text: str) -> SimilarityResult:
         """Compute similarity between ad_claim and landing_text."""
+        backend = "sbert" if (self.runtime.enable_text_embedding and self._sbert_available) else "token_overlap"
+        logger.debug("L3TextEmbedding.similarity: claim_len=%d, landing_len=%d, backend=%s", len(ad_claim), len(landing_text), backend)
+
         if not self.runtime.enable_text_embedding or not self._sbert_available:
             score = _token_overlap(ad_claim, landing_text)
+            logger.info("L3TextEmbedding result: score=%.4f, backend=%s", score, "token_overlap")
             return SimilarityResult(score=score, backend="token_overlap")
 
         try:
@@ -62,8 +71,10 @@ class L3TextEmbedding:
             model = self._get_sbert_model()
             embeddings = model.encode([ad_claim, landing_text], normalize_embeddings=True)
             score = float(np.dot(embeddings[0], embeddings[1]))
+            logger.info("L3TextEmbedding result: score=%.4f, backend=%s", score, "sbert")
             return SimilarityResult(score=score, backend="sbert")
         except Exception as e:
             logger.warning("sbert similarity failed: %s, falling back to token_overlap", e)
             score = _token_overlap(ad_claim, landing_text)
+            logger.info("L3TextEmbedding result: score=%.4f, backend=%s", score, "token_overlap")
             return SimilarityResult(score=score, backend="token_overlap")

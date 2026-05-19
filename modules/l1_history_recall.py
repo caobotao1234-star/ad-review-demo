@@ -31,6 +31,9 @@ class L1Recall:
 
     def recall(self, media: MediaResult) -> LayerResult:
         """Match current media fingerprint against history. Returns LayerResult."""
+        logger.debug("L1Recall.recall: ad_id=%s, mock=%s, phash_count=%d, md5=%s",
+                     media.ad_id, media.mock, len(media.fingerprint.phash_list), media.file_md5)
+
         # Guard: mock media → NEXT
         if media.mock:
             reason = render_reason(ReasonCode.L1_NO_MATCH, {})
@@ -69,6 +72,7 @@ class L1Recall:
                 media.fingerprint.phash_list,
                 hist_phash_list,
             )
+            logger.debug("L1 pHash match: history_id=%s, ratio=%.3f", hist.get("history_id"), ratio)
             if ratio > best_ratio:
                 best_ratio = ratio
                 best_match = hist
@@ -76,6 +80,7 @@ class L1Recall:
         # Decision based on best match
         if best_match is None or best_ratio < self.thresholds.l1_history_match_threshold:
             reason = render_reason(ReasonCode.L1_NO_MATCH, {})
+            logger.info("L1Recall result: decision=%s, best_ratio=%.3f, history_id=%s", Decision.NEXT.value, best_ratio, None)
             return LayerResult(
                 layer="L1",
                 decision=Decision.NEXT,
@@ -113,6 +118,8 @@ class L1Recall:
             )
         ]
 
+        logger.info("L1Recall result: decision=%s, best_ratio=%.3f, history_id=%s", decision.value, best_ratio, history_id)
+
         return LayerResult(
             layer="L1",
             decision=decision,
@@ -128,11 +135,13 @@ class L1Recall:
 
     def _check_md5(self, file_md5: str) -> LayerResult | None:
         """Check if file MD5 matches any historical violation. Returns LayerResult or None."""
+        logger.debug("L1 MD5 check: file_md5=%s, checking %d fingerprints", file_md5, len(self.fingerprints))
         for hist in self.fingerprints:
             hist_md5 = hist.get("md5")
             if hist_md5 and hist_md5 == file_md5:
                 label = hist.get("label", "unknown")
                 history_id = hist.get("history_id", "unknown")
+                logger.info("L1 MD5 HIT: history_id=%s, label=%s", history_id, label)
                 if label == "violation":
                     reason = render_reason(ReasonCode.L1_MD5_VIOLATION_HIT, {"history_id": history_id, "md5": file_md5})
                     return LayerResult(

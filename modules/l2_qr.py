@@ -43,7 +43,10 @@ class L2QR:
         Returns a list of QRHit for each successfully decoded QR code.
         Returns empty list if QR detection is disabled or media is mock.
         """
+        logger.debug("L2QR.detect: enable_qr=%s, mock=%s, frame_count=%d", self.runtime.enable_qr, media.mock, len(media.sampled_frames))
+
         if not self.runtime.enable_qr or media.mock:
+            logger.info("L2QR done: frames_scanned=%d, qr_found=%d, drainage=%d", 0, 0, 0)
             return []
 
         detector = cv2.QRCodeDetector()
@@ -57,15 +60,19 @@ class L2QR:
 
             try:
                 decoded, points, _ = detector.detectAndDecode(img)
+                is_drainage = self._is_private_drainage(decoded) if decoded else False
+                logger.debug("QR frame %s: decoded=%s, drainage=%s", frame_ref.frame_id, bool(decoded), is_drainage)
                 if decoded:
                     hits.append(QRHit(
                         frame_id=frame_ref.frame_id,
                         decoded_text=decoded,
-                        is_private_drainage=self._is_private_drainage(decoded),
+                        is_private_drainage=is_drainage,
                     ))
             except Exception as e:  # noqa: BLE001
                 logger.warning("QR detection failed on %s: %s", frame_ref.frame_id, e)
 
+        drainage_count = sum(1 for h in hits if h.is_private_drainage)
+        logger.info("L2QR done: frames_scanned=%d, qr_found=%d, drainage=%d", len(media.sampled_frames), len(hits), drainage_count)
         return hits
 
     # ------------------------------------------------------------------

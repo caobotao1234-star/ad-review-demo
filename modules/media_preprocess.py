@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from pathlib import Path
 
 import cv2
@@ -26,6 +27,9 @@ class MediaPreprocessor:
 
     def process(self, ad: AdMeta) -> MediaResult:
         """Process a single ad's media file and return a MediaResult."""
+        logger.debug("MediaPreprocessor.process: ad_id=%s, media_path=%s", ad.ad_id, ad.media_path)
+        t_start = time.perf_counter()
+
         # --- Guard: missing media ---
         if not ad.media_path or not Path(ad.media_path).exists():
             logger.warning("media_path %s missing, returning mock MediaResult", ad.media_path)
@@ -42,7 +46,7 @@ class MediaPreprocessor:
             return MediaResult(ad_id=ad.ad_id, mock=True, fallback_reason="decode_error")
 
         try:
-            return self._process_video(ad, cap, media_path, frames_dir, ad_dir)
+            return self._process_video(ad, cap, media_path, frames_dir, ad_dir, t_start)
         except Exception as e:
             logger.error("Video decode error for %s: %s", ad.ad_id, e)
             return MediaResult(ad_id=ad.ad_id, mock=True, fallback_reason="decode_error")
@@ -60,14 +64,19 @@ class MediaPreprocessor:
         media_path: Path,
         frames_dir: Path,
         ad_dir: Path,
+        t_start: float,
     ) -> MediaResult:
+        t_md5_start = time.perf_counter()
         file_md5 = compute_file_md5(media_path)
+        md5_time = time.perf_counter() - t_md5_start
+        logger.debug("File MD5 computed: %s (%.3fs)", file_md5, md5_time)
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         duration_sec = frame_count / fps if fps > 0 else 0.0
+        logger.debug("Video opened: fps=%.1f, frames=%d, resolution=%dx%d, duration=%.1fs", fps, frame_count, width, height, duration_sec)
 
         # --- Collect candidate frame indices ---
         candidate_indices: list[int] = []
@@ -116,16 +125,20 @@ class MediaPreprocessor:
             frame_phashes.append((idx, frame, phash_hex))
 
         # --- Deduplicate by pHash hamming distance <= 4 ---
-        kept: list[tuple[int, np.ndarray, str]] = []
+        kept_before_limit: list[tuple[int, np.ndarray, str]] = []
         for idx, frame, phash_hex in frame_phashes:
-            if all(hamming_distance(phash_hex, k_phash) > 4 for _, _, k_phash in kept):
-                kept.append((idx, frame, phash_hex))
+            if all(hamming_distance(phash_hex, k_phash) > 4 for _, _, k_phash in kept_before_limit):
+                kept_before_limit.append((idx, frame, phash_hex))
 
         # --- Limit to max_sampled_frames (uniform downsample if exceeded) ---
         max_frames = self.runtime.max_sampled_frames
+        kept = list(kept_before_limit)
         if len(kept) > max_frames:
             indices = np.linspace(0, len(kept) - 1, max_frames, dtype=int)
             kept = [kept[i] for i in indices]
+
+        logger.debug("Frame sampling: candidates=%d, after_scene=%d, after_dedup=%d, final=%d", len(candidate_indices), len(raw_frames), len(kept_before_limit), len(kept))
+        logger.debug("pHash computed for %d frames (resize=%d)", len(kept), resize)
 
         # --- Save frames and build FrameRef list ---
         sampled_frames: list[FrameRef] = []
@@ -147,7 +160,14 @@ class MediaPreprocessor:
         fingerprint = VideoFingerprint(phash_list=phash_list, frame_count=len(kept))
 
         # --- Audio extraction ---
-        audio_path = self._extract_audio(media_path, ad_dir / "audio.wav")
+        audio_out = ad_dir / "audio.wav"
+        logger.debug("ffmpeg audio extraction: input=%s, output=%s", media_path, audio_out)
+        audio_path = self._extract_audio(media_path, audio_out)
+        logger.debug("ffmpeg done: success=%s, audio_path=%s", audio_path is not None, audio_path)
+
+        t_end = time.perf_counter()
+        logger.info("MediaPreprocessor done: ad_id=%s, mock=%s, frames=%d, md5=%s, audio=%s, took=%.3fs",
+                    ad.ad_id, False, len(kept), file_md5, audio_path is not None, t_end - t_start)
 
         return MediaResult(
             ad_id=ad.ad_id,

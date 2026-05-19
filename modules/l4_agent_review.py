@@ -294,20 +294,24 @@ class L4AgentReview:
         media: MediaResult,
     ) -> LayerResult:
         """Perform L4 agent review with multimodal vision and cross-verification."""
+        logger.debug("L4AgentReview.review: ad_id=%s, l3_score=%d, frames_available=%d", ad.ad_id, l3.risk_score, len(media.sampled_frames))
+
         # Build query for RAG pre-fetch (context for user prompt)
         query = f"{ad.title} {ad.description} {ad.category} {ad.brand}"
         policy_excerpts = self.policy_rag(query)
         history_cases = self.history_case_rag(query)
+        logger.debug("L4 policy_rag: query_len=%d, results=%d", len(query), len(policy_excerpts))
 
         # Build user prompt
         user_prompt = self._build_user_prompt(ad, l1, l2, l3, media, policy_excerpts, history_cases)
 
         # Select representative frames for multimodal analysis
         images = self._select_representative_frames(media)
+        logger.debug("L4 frame encoding: %d frames selected, total_b64_size=%d bytes", len(images), sum(len(i) for i in images))
 
         # Call agent: use vision if we have real frames, otherwise fallback to text-only
         if images:
-            logger.info("L4 calling agent with vision (%d images) + tools", len(images))
+            logger.info("L4 calling agent: mode=%s, vision=%s, tools=%s, prompt_len=%d", "vision", True, True, len(user_prompt))
             response = self.agent.call_with_vision(
                 _L4_SYSTEM_PROMPT,
                 user_prompt,
@@ -316,7 +320,7 @@ class L4AgentReview:
                 schema_hint={"scenario": "l4_review"},
             )
         else:
-            logger.info("L4 calling agent in text-only mode (no frames available)")
+            logger.info("L4 calling agent: mode=%s, vision=%s, tools=%s, prompt_len=%d", "text", False, False, len(user_prompt))
             response = self.agent.call(
                 _L4_SYSTEM_PROMPT, user_prompt, {"scenario": "l4_review"}
             )
@@ -358,15 +362,19 @@ class L4AgentReview:
         confidence = payload.confidence
         reason_code = ReasonCode.L4_AGENT_DECISION
 
+        logger.info("L4 agent response: error=%s, repair=%s, decision=%s, confidence=%.2f", response.error, response.repair_applied, decision_str, confidence)
+
         # High-sensitive category override: 金融/医疗
         if ad.category in {"金融", "医疗"}:
             if decision_str == "APPROVE":
+                logger.info("L4 sensitive category override: %s → HUMAN_REVIEW", ad.category)
                 decision_str = "HUMAN_REVIEW"
                 reason_code = ReasonCode.L4_HIGH_SENSITIVE_CATEGORY
 
         # Low confidence override
         if confidence < self.thresholds.agent_confidence_auto_threshold:
             if decision_str != "HUMAN_REVIEW":
+                logger.info("L4 low confidence override: %.2f < %.2f → HUMAN_REVIEW", confidence, self.thresholds.agent_confidence_auto_threshold)
                 decision_str = "HUMAN_REVIEW"
                 reason_code = ReasonCode.L4_AGENT_LOW_CONFIDENCE
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from modules.schemas import AdMeta, MediaResult, RuntimeConfig
@@ -72,8 +73,11 @@ class L2ASR:
 
     def transcribe(self, ad: AdMeta, media: MediaResult) -> ASRResult:
         """Transcribe audio from media. Falls back to mock_asr_text on failure."""
+        logger.debug("L2ASR.transcribe: ad_id=%s, audio_path=%s, enable_asr=%s", ad.ad_id, media.audio_path, self.runtime.enable_asr)
+
         # Guard: ASR disabled
         if not self.runtime.enable_asr:
+            logger.info("ASR fallback to mock: reason=%s", "disabled")
             return ASRResult(
                 text=ad.mock_asr_text,
                 mock=True,
@@ -82,6 +86,7 @@ class L2ASR:
 
         # Guard: no audio available
         if media.mock or media.audio_path is None:
+            logger.info("ASR fallback to mock: reason=%s", "no_audio")
             return ASRResult(
                 text=ad.mock_asr_text,
                 mock=True,
@@ -90,32 +95,31 @@ class L2ASR:
 
         # Resolve device (may raise ConfigError for explicit cuda without CUDA)
         try:
-            self._resolve_device()
+            device, compute_type = self._resolve_device()
+            logger.debug("ASR device resolved: device=%s, compute_type=%s", device, compute_type)
         except ConfigError as e:
             logger.error("ASR device resolution failed: %s", e)
             raise
 
         # Attempt real transcription with cached model
         try:
-            import time as _time
-
-            t_model_start = _time.perf_counter()
+            t_model_start = time.perf_counter()
             model = self._get_model()
-            t_model_end = _time.perf_counter()
+            t_model_end = time.perf_counter()
             logger.debug("ASR model get: %.3fs (cached=%s)", t_model_end - t_model_start, self._model is not None)
 
-            t_transcribe_start = _time.perf_counter()
+            logger.debug("ASR transcribe start: audio=%s", media.audio_path)
+            t_transcribe_start = time.perf_counter()
             segments, info = model.transcribe(media.audio_path)
             text_parts = []
             for seg in segments:
                 text_parts.append(seg.text)
             text = " ".join(text_parts)
-            t_transcribe_end = _time.perf_counter()
+            t_transcribe_end = time.perf_counter()
 
             logger.info(
-                "ASR transcription done: audio=%s, device=%s, compute=%s, "
-                "model_get=%.3fs, transcribe=%.3fs, text_len=%d",
-                media.audio_path, self._device, self._compute_type,
+                "ASR transcribe done: device=%s, compute=%s, model_load=%.3fs, inference=%.3fs, text_len=%d chars",
+                self._device, self._compute_type,
                 t_model_end - t_model_start,
                 t_transcribe_end - t_transcribe_start,
                 len(text),
@@ -125,6 +129,7 @@ class L2ASR:
             raise
         except Exception as e:  # noqa: BLE001
             logger.warning("faster-whisper transcription failed: %s", e)
+            logger.info("ASR fallback to mock: reason=%s", f"model_error:{e}")
             return ASRResult(
                 text=ad.mock_asr_text,
                 mock=True,

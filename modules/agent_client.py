@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Any
 
 from modules.schemas import AgentResponse, RuntimeConfig
@@ -19,6 +20,7 @@ class MockAgent:
     def call(self, system: str, user: str, schema_hint: dict) -> AgentResponse:
         """Return structured JSON based on schema_hint scenario."""
         scenario = schema_hint.get("scenario", "")
+        logger.debug("MockAgent.call: scenario=%s", scenario)
 
         if scenario == "l4_review":
             payload = self._mock_l4_review(user)
@@ -183,6 +185,8 @@ class AgentClient:
 
     def call(self, system: str, user: str, schema_hint: dict) -> AgentResponse:
         """Call LLM or MockAgent depending on mode."""
+        logger.debug("AgentClient.call: mode=%s, system_len=%d, user_len=%d", self._mode, len(system), len(user))
+
         if self._mode == "mock":
             return self._mock_agent.call(system, user, schema_hint)
 
@@ -215,6 +219,8 @@ class AgentClient:
             tools: Optional list of tool definitions for function calling
             schema_hint: Hint for MockAgent
         """
+        logger.debug("AgentClient.call: mode=%s, system_len=%d, user_len=%d", self._mode, len(system), len(user_text))
+
         if self._mode == "mock":
             return self._mock_agent.call(system, user_text, schema_hint or {})
 
@@ -235,6 +241,7 @@ class AgentClient:
         import requests
 
         url = self._base_url.rstrip("/") + "/chat/completions"
+        logger.debug("LLM API request: url=%s, model=%s", url, self._model)
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -248,10 +255,14 @@ class AgentClient:
             "temperature": 0.1,
         }
 
+        t0 = time.perf_counter()
         resp = requests.post(url, json=payload, headers=headers, timeout=120)
         resp.raise_for_status()
+        elapsed = time.perf_counter() - t0
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        content = data["choices"][0]["message"]["content"]
+        logger.debug("LLM API response: status=%d, content_len=%d, took=%.3fs", resp.status_code, len(content), elapsed)
+        return content
 
     # ------------------------------------------------------------------
     # Private: vision API call with optional tools
@@ -268,6 +279,7 @@ class AgentClient:
         import requests
 
         url = self._base_url.rstrip("/") + "/chat/completions"
+        logger.debug("LLM API request: url=%s, model=%s", url, self._model)
         headers = {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
@@ -303,10 +315,14 @@ class AgentClient:
         # Handle tool calls response
         message = data["choices"][0]["message"]
         if message.get("tool_calls"):
+            tool_calls = message["tool_calls"]
+            logger.debug("LLM tool_calls: %d calls, functions=%s", len(tool_calls), [tc["function"]["name"] for tc in tool_calls])
             # Execute tool calls and make follow-up request
             return self._handle_tool_calls(message, payload, headers, url)
 
-        return message.get("content", "")
+        content = message.get("content", "")
+        logger.debug("LLM API response: status=%d, content_len=%d, took=%.3fs", resp.status_code, len(content), 0.0)
+        return content
 
     # ------------------------------------------------------------------
     # Private: function calling handler
@@ -352,7 +368,9 @@ class AgentClient:
     def _execute_tool(self, func_name: str, func_args: dict) -> dict:
         """Execute a tool call locally. Tools are registered by L4AgentReview."""
         if func_name in self._registered_tools:
-            return self._registered_tools[func_name](func_args)
+            result = self._registered_tools[func_name](func_args)
+            logger.debug("Tool executed: %s, result_keys=%s", func_name, list(result.keys()))
+            return result
         return {"error": f"Unknown tool: {func_name}"}
 
     # ------------------------------------------------------------------
@@ -394,6 +412,7 @@ class AgentClient:
         if stripped != raw.strip():
             try:
                 json.loads(stripped)
+                logger.debug("JSON repair attempted: success=%s, method=%s", True, "strip_markdown")
                 return stripped
             except json.JSONDecodeError:
                 pass
@@ -401,8 +420,10 @@ class AgentClient:
         # Find first { ... last }
         m = re.search(r"\{.*\}", raw, re.DOTALL)
         if m:
+            logger.debug("JSON repair attempted: success=%s, method=%s", True, "brace_extract")
             return m.group(0)
 
+        logger.debug("JSON repair attempted: success=%s, method=%s", False, "none")
         return None
 
     def _fallback_payload(self) -> dict[str, Any]:

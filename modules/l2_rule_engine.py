@@ -96,6 +96,8 @@ class L2RuleEngine:
         text_sources.append(("asr", asr.text))
         text_sources.append(("landing_page", ad.landing_page.text))
 
+        logger.debug("L2RuleEngine.evaluate: ad_id=%s, category=%s, text_sources=%d", ad.ad_id, ad.category, len(text_sources))
+
         # Normalize claim text for category/landing checks (unchanged)
         norm_claim = normalize_text(ad_claim_text)
 
@@ -107,6 +109,7 @@ class L2RuleEngine:
             for source_name, source_text in text_sources:
                 norm_source = normalize_text(source_text)
                 if norm_word in norm_source:
+                    logger.debug("L2 keyword hit: type=%s, word=%s, source=%s", "hard_block", entry.word, source_name)
                     reason = render_reason(
                         ReasonCode.L2_HARD_BLOCK_HIT,
                         {"keyword": entry.word, "source": source_name},
@@ -141,6 +144,7 @@ class L2RuleEngine:
             for source_name, source_text in text_sources:
                 norm_source = normalize_text(source_text)
                 if norm_word in norm_source:
+                    logger.debug("L2 keyword hit: type=%s, word=%s, source=%s", "normalized_block", entry.word, source_name)
                     reason = render_reason(
                         ReasonCode.L2_NORMALIZED_BLOCK_HIT,
                         {"keyword": entry.word, "raw_text": entry.word, "source": source_name},
@@ -175,6 +179,7 @@ class L2RuleEngine:
             for source_name, source_text in text_sources:
                 norm_source = normalize_text(source_text)
                 if norm_word in norm_source:
+                    logger.debug("L2 keyword hit: type=%s, word=%s, source=%s", "suspicious_slang", entry.word, source_name)
                     risk_score += 15
                     signals.append(Signal(
                         source=SignalSource.KEYWORD,
@@ -192,6 +197,7 @@ class L2RuleEngine:
 
         # --- 6. Category qualification check ---
         cat_signals = self._check_category_qualification(ad, norm_claim)
+        logger.debug("L2 category check: category=%s, has_sensitive=%s, missing_quals=%s", ad.category, any(s.code == ReasonCode.L2_HARD_BLOCK_HIT for s in cat_signals), [s.detail for s in cat_signals if s.code != ReasonCode.L2_HARD_BLOCK_HIT])
         for sig in cat_signals:
             # Financial sensitive claim + missing license → direct REJECT
             if sig.code == ReasonCode.L2_HARD_BLOCK_HIT:
@@ -227,6 +233,8 @@ class L2RuleEngine:
             # Use the first signal's code as representative
             reason_code = signals[0].code
             reason = render_reason(reason_code, {"keyword": signals[0].detail, "source": "L2"})
+
+        logger.info("L2RuleEngine result: decision=%s, risk_score=%d, signals=%d, reason_code=%s", Decision.NEXT.value, risk_score, len(signals), reason_code)
 
         return LayerResult(
             layer="L2",

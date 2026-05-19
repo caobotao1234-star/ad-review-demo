@@ -44,6 +44,7 @@ class L3RiskFusion:
         embedding: SimilarityResult,
     ) -> LayerResult:
         """Aggregate signals, compute risk_score, and decide REJECT/APPROVE/AGENT_REVIEW."""
+        logger.debug("L3RiskFusion.fuse: ad_id=%s, l2_score=%d, consistency_score=%d", ad.ad_id, l2.risk_score, consistency.extra_score)
         all_signals: list[Signal] = []
 
         # Collect signals from L1, L2, and L3 consistency
@@ -53,6 +54,12 @@ class L3RiskFusion:
 
         # Compute base risk score from all signal deltas
         risk_score = sum(s.score_delta for s in all_signals)
+
+        # Log each signal
+        running_total = 0
+        for s in all_signals:
+            running_total += s.score_delta
+            logger.debug("L3 signal: code=%s, delta=%d, cumulative=%d", s.code.value if s.code else None, s.score_delta, running_total)
 
         # Merchant history violation bonus
         if ad.merchant.history_violation_count > 0:
@@ -77,12 +84,15 @@ class L3RiskFusion:
         # Check for conflict codes
         has_conflict = any(s.code in CONFLICT_CODES for s in all_signals)
 
+        logger.debug("L3 threshold check: score=%d, reject=%d, approve=%d, has_conflict=%s", risk_score, self.thresholds.l3_reject_score, self.thresholds.l3_approve_score, has_conflict)
+
         # Threshold-based decision
         if risk_score >= self.thresholds.l3_reject_score:
             reason = render_reason(
                 ReasonCode.L3_RISK_SCORE_OVER_REJECT,
                 {"risk_score": risk_score, "threshold": self.thresholds.l3_reject_score},
             )
+            logger.info("L3RiskFusion result: decision=%s, risk_score=%d, signals=%d", Decision.REJECT.value, risk_score, len(all_signals))
             return LayerResult(
                 layer="L3",
                 decision=Decision.REJECT,
@@ -97,6 +107,7 @@ class L3RiskFusion:
                 ReasonCode.L3_RISK_SCORE_UNDER_APPROVE,
                 {"risk_score": risk_score, "threshold": self.thresholds.l3_approve_score},
             )
+            logger.info("L3RiskFusion result: decision=%s, risk_score=%d, signals=%d", Decision.APPROVE.value, risk_score, len(all_signals))
             return LayerResult(
                 layer="L3",
                 decision=Decision.APPROVE,
@@ -111,6 +122,7 @@ class L3RiskFusion:
             ReasonCode.L3_AGENT_REVIEW,
             {"risk_score": risk_score},
         )
+        logger.info("L3RiskFusion result: decision=%s, risk_score=%d, signals=%d", Decision.AGENT_REVIEW.value, risk_score, len(all_signals))
         return LayerResult(
             layer="L3",
             decision=Decision.AGENT_REVIEW,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 from modules.schemas import AdMeta, MediaResult, RuntimeConfig
@@ -57,9 +58,11 @@ class L2OCR:
         """Lazy-load PaddleOCR model (loaded once, reused across calls)."""
         if self._ocr_model is None:
             from paddleocr import PaddleOCR
-            logger.info("Loading PaddleOCR model (first call, will be reused)...")
+            logger.debug("PaddleOCR model loading...")
+            t0 = time.perf_counter()
             self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-            logger.info("PaddleOCR model loaded successfully")
+            elapsed = time.perf_counter() - t0
+            logger.info("PaddleOCR model loaded (%.3fs)", elapsed)
         return self._ocr_model
 
     def extract(self, ad: AdMeta, media: MediaResult) -> list[FrameOCR]:
@@ -68,20 +71,27 @@ class L2OCR:
         Returns a list of FrameOCR, one per sampled frame.
         Falls back to mock_ocr_texts when OCR is disabled or PaddleOCR unavailable.
         """
+        logger.debug("L2OCR.extract: ad_id=%s, enable_ocr=%s, frame_count=%d", ad.ad_id, self.runtime.enable_ocr, len(media.sampled_frames))
+
         use_real_ocr = self.runtime.enable_ocr and _check_paddleocr()
 
         if not use_real_ocr:
-            return self._mock_from_ad(ad, media)
+            results = self._mock_from_ad(ad, media)
+            logger.info("L2OCR done: mode=%s, frames_processed=%d, total_texts=%d", "mock", len(results), sum(len(r.texts) for r in results))
+            return results
 
         # Real OCR mode: run PaddleOCR on each sampled frame
         if media.mock or not media.sampled_frames:
-            return self._mock_from_ad(ad, media)
+            results = self._mock_from_ad(ad, media)
+            logger.info("L2OCR done: mode=%s, frames_processed=%d, total_texts=%d", "mock", len(results), sum(len(r.texts) for r in results))
+            return results
 
         results: list[FrameOCR] = []
         ocr_model = self._get_ocr_model()
 
         for frame_ref in media.sampled_frames:
             try:
+                t0 = time.perf_counter()
                 ocr_result = ocr_model.ocr(frame_ref.frame_path, cls=True)
                 texts = []
                 if ocr_result and ocr_result[0]:
@@ -89,11 +99,14 @@ class L2OCR:
                         if line and len(line) >= 2:
                             text_content = line[1][0] if isinstance(line[1], (list, tuple)) else str(line[1])
                             texts.append(text_content)
+                elapsed = time.perf_counter() - t0
+                logger.debug("OCR frame %s: %d texts found (%.3fs)", frame_ref.frame_id, len(texts), elapsed)
                 results.append(FrameOCR(frame_id=frame_ref.frame_id, texts=texts))
             except Exception as e:
                 logger.warning("OCR failed on %s: %s", frame_ref.frame_id, e)
                 results.append(FrameOCR(frame_id=frame_ref.frame_id, texts=[]))
 
+        logger.info("L2OCR done: mode=%s, frames_processed=%d, total_texts=%d", "real", len(results), sum(len(r.texts) for r in results))
         return results
 
     # ------------------------------------------------------------------
