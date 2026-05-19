@@ -248,7 +248,7 @@ class AgentClient:
             "temperature": 0.1,
         }
 
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        resp = requests.post(url, json=payload, headers=headers, timeout=120)
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
@@ -344,7 +344,7 @@ class AgentClient:
             "max_tokens": 2000,
         }
 
-        resp = requests.post(url, json=follow_up, headers=headers, timeout=60)
+        resp = requests.post(url, json=follow_up, headers=headers, timeout=120)
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"].get("content", "")
