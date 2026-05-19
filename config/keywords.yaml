@@ -20,11 +20,11 @@ hard_block:
 normalized_block:
   - {word: "1比1", category: "all"}
   - {word: "壹比壹", category: "all"}
-  - {word: "v信", category: "all"}
-  - {word: "Ｖ信", category: "all"}
-  - {word: "vx", category: "all"}
 
 suspicious_slang:
+  - {word: "v信", category: "all"}
+  - {word: "vx", category: "all"}
+  - {word: "Ｖ信", category: "all"}
   - {word: "柜姐渠道", category: "箱包"}
   - {word: "原厂尾单", category: "箱包"}
   - {word: "懂的来", category: "箱包"}

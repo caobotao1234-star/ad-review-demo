@@ -10,7 +10,7 @@
   "mock_ocr_texts": ["官方正品", "专柜品质", "限时特惠"],
   "landing_page": {
     "url": "https://example.com/bag-001",
-    "text": "渠道货源，原厂尾单，品质保证，详情微信咨询，支持验货",
+    "text": "渠道货源，原厂尾单，品质保证，详情咨询客服，支持验货",
     "price": 899.0
   },
   "merchant": {
