@@ -35,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_review(meta_path: Path, config_dir: Path, output_root: Path) -> int:
+    import time
+
     from modules.agent_client import AgentClient
     from modules.config_loader import load_all_configs
     from modules.l1_history_recall import L1Recall
@@ -50,8 +52,13 @@ def run_review(meta_path: Path, config_dir: Path, output_root: Path) -> int:
     from modules.report_writer import ReportWriter
     from modules.schemas import AdMeta, Decision
 
+    pipeline_start = time.perf_counter()
+    timings: dict[str, float] = {}
+
     # Load configs
+    t0 = time.perf_counter()
     runtime, thresholds, keywords, category_rules = load_all_configs(config_dir)
+    timings["config_load"] = time.perf_counter() - t0
 
     # Parse ad meta
     raw = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -75,68 +82,119 @@ def run_review(meta_path: Path, config_dir: Path, output_root: Path) -> int:
     layers: list[dict] = []
 
     # Media preprocessing
+    t0 = time.perf_counter()
     media = preprocessor.process(ad)
+    timings["media_preprocess"] = time.perf_counter() - t0
     writer.print_media({
         "mock": media.mock,
         "frame_count": len(media.sampled_frames),
         "audio_path": media.audio_path,
     })
 
-    # L1
+    # L1: MD5 + pHash
+    t0 = time.perf_counter()
     l1_result = l1.recall(media)
+    timings["L1_recall"] = time.perf_counter() - t0
     writer.print_layer("L1Recall", l1_result)
     layers.append(l1_result.model_dump())
     if l1_result.decision in (Decision.APPROVE, Decision.REJECT):
-        summary = {"ad_id": ad.ad_id, "final_decision": l1_result.decision.value, "terminated_at": "L1", "layers": layers}
+        timings["pipeline_total"] = time.perf_counter() - pipeline_start
+        summary = {"ad_id": ad.ad_id, "final_decision": l1_result.decision.value, "terminated_at": "L1", "layers": layers, "timings": timings}
         out = writer.write_review(ad.ad_id, summary)
+        _print_timings(timings)
         writer.print_done(l1_result.decision.value, out)
         return 0
 
-    # L2
+    # L2: OCR + ASR + QR + RuleEngine
+    t0 = time.perf_counter()
     ocr_results = l2_ocr.extract(ad, media)
+    timings["L2_ocr"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     asr_result = l2_asr.transcribe(ad, media)
+    timings["L2_asr"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     qr_results = l2_qr.detect(media)
+    timings["L2_qr"] = time.perf_counter() - t0
 
     from modules.l2_rule_engine import FrameOCR as L2FrameOCR, ASRResult as L2ASRResult, QRHit as L2QRHit
     ocr_for_l2 = [L2FrameOCR(frame_id=o.frame_id, texts=o.texts) for o in ocr_results]
     asr_for_l2 = L2ASRResult(text=asr_result.text, mock=asr_result.mock, fallback_reason=asr_result.fallback_reason)
     qr_for_l2 = [L2QRHit(frame_id=q.frame_id, decoded_text=q.decoded_text, is_private_drainage=q.is_private_drainage) for q in qr_results]
 
+    t0 = time.perf_counter()
     l2_result = l2_engine.evaluate(ad, ocr_for_l2, asr_for_l2, qr_for_l2)
+    timings["L2_rule_engine"] = time.perf_counter() - t0
+    timings["L2_total"] = timings["L2_ocr"] + timings["L2_asr"] + timings["L2_qr"] + timings["L2_rule_engine"]
+
     writer.print_layer("L2RuleEngine", l2_result)
     layers.append(l2_result.model_dump())
     if l2_result.decision in (Decision.APPROVE, Decision.REJECT):
-        summary = {"ad_id": ad.ad_id, "final_decision": l2_result.decision.value, "terminated_at": "L2", "layers": layers}
+        timings["pipeline_total"] = time.perf_counter() - pipeline_start
+        summary = {"ad_id": ad.ad_id, "final_decision": l2_result.decision.value, "terminated_at": "L2", "layers": layers, "timings": timings}
         out = writer.write_review(ad.ad_id, summary)
+        _print_timings(timings)
         writer.print_done(l2_result.decision.value, out)
         return 0
 
-    # L3
-    # Build ad_claim_text
+    # L3: Consistency + Embedding + RiskFusion
     ocr_texts = []
     for o in ocr_results:
         ocr_texts.extend(o.texts)
     ad_claim_text = " ".join(filter(None, [ad.title, ad.description] + ocr_texts + [asr_result.text]))
 
+    t0 = time.perf_counter()
     consistency_result = l3_consistency.check(ad, ad_claim_text, l2_result.signals)
+    timings["L3_consistency"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     embedding_result = l3_embedding.similarity(ad_claim_text, ad.landing_page.text)
+    timings["L3_embedding"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
     l3_result = l3_fusion.fuse(ad, l1_result, l2_result, consistency_result, embedding_result)
+    timings["L3_fusion"] = time.perf_counter() - t0
+    timings["L3_total"] = timings["L3_consistency"] + timings["L3_embedding"] + timings["L3_fusion"]
+
     writer.print_layer("L3RiskFusion", l3_result)
     layers.append(l3_result.model_dump())
     if l3_result.decision in (Decision.APPROVE, Decision.REJECT):
-        summary = {"ad_id": ad.ad_id, "final_decision": l3_result.decision.value, "terminated_at": "L3", "layers": layers}
+        timings["pipeline_total"] = time.perf_counter() - pipeline_start
+        summary = {"ad_id": ad.ad_id, "final_decision": l3_result.decision.value, "terminated_at": "L3", "layers": layers, "timings": timings}
         out = writer.write_review(ad.ad_id, summary)
+        _print_timings(timings)
         writer.print_done(l3_result.decision.value, out)
         return 0
 
     # L4 (only if AGENT_REVIEW)
+    t0 = time.perf_counter()
     l4_result = l4.review(ad, l1_result, l2_result, l3_result, media)
+    timings["L4_agent"] = time.perf_counter() - t0
+
     writer.print_layer("L4AgentReview", l4_result)
     layers.append(l4_result.model_dump())
-    summary = {"ad_id": ad.ad_id, "final_decision": l4_result.decision.value, "terminated_at": "L4", "layers": layers}
+    timings["pipeline_total"] = time.perf_counter() - pipeline_start
+    summary = {"ad_id": ad.ad_id, "final_decision": l4_result.decision.value, "terminated_at": "L4", "layers": layers, "timings": timings}
     out = writer.write_review(ad.ad_id, summary)
+    _print_timings(timings)
     writer.print_done(l4_result.decision.value, out)
     return 0
+
+
+def _print_timings(timings: dict[str, float]) -> None:
+    """Print timing report to stdout."""
+    print("\n[Timing Report]")
+    # Print individual steps
+    step_keys = [k for k in timings if k not in ("pipeline_total",)]
+    for key in step_keys:
+        ms = timings[key] * 1000
+        bar = "█" * min(int(ms / 50), 40)  # 50ms per block, max 40 blocks
+        print(f"  {key:20s} {ms:8.1f}ms {bar}")
+    # Print total
+    total_ms = timings.get("pipeline_total", 0) * 1000
+    print(f"  {'─' * 40}")
+    print(f"  {'TOTAL':20s} {total_ms:8.1f}ms")
 
 
 def run_appeal(appeal_path: Path, config_dir: Path, output_root: Path) -> int:
