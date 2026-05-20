@@ -69,41 +69,24 @@ def download_sbert():
 
 def download_paddleocr():
     """Download PaddleOCR models."""
-    target = MODELS_DIR / "paddleocr"
-    if target.exists() and any(target.iterdir()):
-        print(f"  ✓ PaddleOCR 模型已存在: {target}")
-        return
-
-    print("  ⬇ 下载 PaddleOCR 中文模型 (~100MB)...")
+    print("  ⬇ 初始化 PaddleOCR（首次会自动下载模型到 ~/.paddlex/）...")
     try:
         from paddleocr import PaddleOCR
-        # PaddleOCR 首次初始化会自动下载模型
-        target.mkdir(parents=True, exist_ok=True)
-        # 新版 PaddleOCR (v3+) 参数名变更
+        # 新版 PaddleOCR 自动管理模型缓存，不需要指定目录
+        # 只需初始化一次，模型会下载到 ~/.paddlex/official_models/
+        import os
+        os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
         try:
-            ocr = PaddleOCR(
-                use_textline_orientation=True,
-                lang="ch",
-                text_detection_model_dir=str(target / "det"),
-                text_recognition_model_dir=str(target / "rec"),
-                textline_orientation_model_dir=str(target / "cls"),
-            )
+            ocr = PaddleOCR(use_textline_orientation=True, lang="ch")
         except TypeError:
-            # 旧版 PaddleOCR 兼容
-            ocr = PaddleOCR(
-                use_angle_cls=True,
-                lang="ch",
-                show_log=False,
-                det_model_dir=str(target / "det"),
-                rec_model_dir=str(target / "rec"),
-                cls_model_dir=str(target / "cls"),
-            )
-        print(f"  ✓ 下载完成: {target}")
+            ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+        print(f"  ✓ PaddleOCR 初始化成功（模型缓存在 ~/.paddlex/）")
     except ImportError:
         print("  ✗ paddleocr 未安装，跳过")
-        print("    安装: pip install paddleocr")
+        print("    安装: pip install paddleocr paddlepaddle")
     except Exception as e:
-        print(f"  ✗ 下载失败: {e}")
+        print(f"  ✗ 初始化失败: {e}")
+        print("    确认已安装: pip install paddlepaddle paddleocr")
 
 
 def main():
