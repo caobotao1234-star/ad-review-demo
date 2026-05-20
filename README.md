@@ -110,26 +110,39 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 3: 下载 ASR 模型（重要！）
+### Step 3: 下载所有模型到本地（重要！）
 
-系统使用 faster-whisper 做语音转写，首次运行会自动从 HuggingFace 下载模型。
+系统使用 3 个 AI 模型，**必须先下载到本地 `models/` 目录**，之后运行不再联网。
 
-**国内用户必看**：HuggingFace 在国内访问很慢甚至超时，请设置镜像：
+**国内用户先设置 HuggingFace 镜像：**
 
 ```bash
 # Windows (PowerShell):
 $env:HF_ENDPOINT = "https://hf-mirror.com"
 
-# Windows (CMD):
-set HF_ENDPOINT=https://hf-mirror.com
-
 # Linux/Mac:
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
-建议写入你的 shell 配置文件（如 `.bashrc` 或 PowerShell `$PROFILE`），避免每次都设。
+**然后一键下载所有模型：**
 
-> 默认模型大小为 `small`（约 500MB），可在 `config/runtime.yaml` 中改为 `tiny`（约 150MB）加快下载。
+```bash
+pip install huggingface_hub sentence-transformers paddleocr
+python scripts/download_models.py
+```
+
+下载完成后 `models/` 目录结构：
+```
+models/
+├── faster-whisper-small/          ← ASR 语音转写模型 (~500MB)
+├── paraphrase-multilingual-MiniLM-L12-v2/  ← 文本嵌入模型 (~90MB)
+└── paddleocr/                     ← OCR 文字识别模型 (~100MB)
+    ├── det/
+    ├── rec/
+    └── cls/
+```
+
+> 下载完成后系统运行时完全不联网。`models/` 目录已在 `.gitignore` 中，不会提交到 git。
 
 ### Step 4: 配置 LLM API
 
@@ -534,6 +547,7 @@ python main.py optimize --logs data/optimization_logs.json
 
 | 脚本 | 用途 | 运行方式 |
 |------|------|----------|
+| `scripts/download_models.py` | 一键下载所有 AI 模型到本地 `models/` 目录 | `python scripts/download_models.py` |
 | `scripts/build_history_fingerprints.py` | 从 `history_videos/` 目录生成指纹库 `data/history_fingerprints.json` | `python scripts/build_history_fingerprints.py` |
 | `scripts/generate_ad_meta.py` | 为 `samples/` 下的真实视频批量生成配套广告 JSON | `python scripts/generate_ad_meta.py` |
 | `scripts/run_all_demo.py` | 一键跑通所有样例，打印汇总报告（覆盖层/决策类型） | `python scripts/run_all_demo.py` |

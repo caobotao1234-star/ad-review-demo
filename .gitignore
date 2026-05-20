@@ -32,6 +32,13 @@ outputs/candidate_keywords.yaml
 # Keep the outputs directory itself
 !outputs/.gitkeep
 
+# Video files (user-provided, not committed)
+samples/*.mp4
+samples/*.avi
+samples/*.mov
+samples/*.mkv
+history_videos/
+
 # OS
 .DS_Store
 Thumbs.db
