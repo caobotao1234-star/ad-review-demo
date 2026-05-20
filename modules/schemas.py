@@ -229,14 +229,20 @@ class RuntimeConfig(BaseModel):
     max_sampled_frames: int = 12
     sample_interval_sec: float = 1.0
     phash_resize: int = 64
-    enable_ocr: bool = False
+    enable_ocr: bool = True
     enable_asr: bool = True
-    asr_model_size: str = "small"
-    asr_device: str = "auto"
-    asr_compute_type: str = "int8_float16"
     enable_qr: bool = True
     enable_text_embedding: bool = True
     llm_enabled: str = "auto"
+    # ASR
+    asr_model_size: str = "small"
+    asr_model_path: str = "models/faster-whisper-small"  # 本地模型路径（优先）
+    asr_device: str = "auto"
+    asr_compute_type: str = "float16"
+    # OCR
+    ocr_model_dir: str = "models/paddleocr"  # PaddleOCR 本地模型目录
+    # Text Embedding
+    embedding_model_path: str = "models/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class Thresholds(BaseModel):

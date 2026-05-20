@@ -49,7 +49,11 @@ class L2ASR:
         self._compute_type: str | None = None
 
     def _get_model(self):
-        """Lazy-load the WhisperModel once, reuse on subsequent calls."""
+        """Lazy-load the WhisperModel once, reuse on subsequent calls.
+        
+        Priority: local model path > HuggingFace download.
+        If asr_model_path exists locally, load from there (no network needed).
+        """
         if self._model is not None:
             return self._model
 
@@ -58,17 +62,28 @@ class L2ASR:
         self._compute_type = compute_type
 
         from faster_whisper import WhisperModel
+        from pathlib import Path
 
-        logger.info(
-            "Loading faster-whisper model: size=%s device=%s compute=%s",
-            self.runtime.asr_model_size, device, compute_type,
-        )
+        # Determine model source: local path or model name (triggers download)
+        model_path = self.runtime.asr_model_path
+        if Path(model_path).exists():
+            model_source = model_path
+            logger.info("Loading faster-whisper from LOCAL path: %s (device=%s, compute=%s)",
+                       model_source, device, compute_type)
+        else:
+            model_source = self.runtime.asr_model_size
+            logger.warning("Local model path '%s' not found, falling back to model name '%s' (may download from HuggingFace)",
+                          model_path, model_source)
+
+        t0 = time.perf_counter()
         self._model = WhisperModel(
-            self.runtime.asr_model_size,
+            model_source,
             device=device,
             compute_type=compute_type,
+            local_files_only=Path(model_path).exists(),  # 本地存在时禁止联网
         )
-        logger.info("faster-whisper model loaded successfully")
+        elapsed = time.perf_counter() - t0
+        logger.info("faster-whisper model loaded successfully (%.3fs)", elapsed)
         return self._model
 
     def transcribe(self, ad: AdMeta, media: MediaResult) -> ASRResult:

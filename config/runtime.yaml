@@ -4,11 +4,22 @@
 max_sampled_frames: 12
 sample_interval_sec: 1
 phash_resize: 64
-enable_ocr: false
+
+# --- 全部启用 ---
+enable_ocr: true
 enable_asr: true
-asr_model_size: small
-asr_device: auto
-asr_compute_type: int8_float16
 enable_qr: true
 enable_text_embedding: true
 llm_enabled: auto
+
+# --- ASR 配置 ---
+asr_model_size: small
+asr_model_path: models/faster-whisper-small   # 本地模型路径（优先使用，不联网）
+asr_device: auto
+asr_compute_type: float16
+
+# --- OCR 配置 ---
+ocr_model_dir: models/paddleocr              # PaddleOCR 本地模型目录（可选）
+
+# --- 文本嵌入配置 ---
+embedding_model_path: models/paraphrase-multilingual-MiniLM-L12-v2  # 本地模型路径

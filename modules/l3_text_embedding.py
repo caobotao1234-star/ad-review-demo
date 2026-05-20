@@ -46,12 +46,24 @@ class L3TextEmbedding:
             return False
 
     def _get_sbert_model(self):
-        """Lazy-load the sbert model."""
+        """Lazy-load the sbert model from local path (no network needed if exists)."""
         if self._sbert_model is None:
             from sentence_transformers import SentenceTransformer
+            from pathlib import Path
+
+            model_path = self.runtime.embedding_model_path
+            use_local = Path(model_path).exists()
+
+            if use_local:
+                logger.info("Loading SBERT from LOCAL path: %s", model_path)
+                source = model_path
+            else:
+                source = "paraphrase-multilingual-MiniLM-L12-v2"
+                logger.warning("Local embedding model '%s' not found, will download from HuggingFace", model_path)
+
             logger.debug("SBERT model loading...")
             t0 = time.perf_counter()
-            self._sbert_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+            self._sbert_model = SentenceTransformer(source)
             elapsed = time.perf_counter() - t0
             logger.info("SBERT model loaded (%.3fs)", elapsed)
         return self._sbert_model

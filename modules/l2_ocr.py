@@ -55,12 +55,30 @@ class L2OCR:
         self._ocr_model = None  # Lazy-loaded PaddleOCR instance
 
     def _get_ocr_model(self):
-        """Lazy-load PaddleOCR model (loaded once, reused across calls)."""
+        """Lazy-load PaddleOCR model (loaded once, reused across calls).
+        
+        If ocr_model_dir exists locally, load from there (no network needed).
+        """
         if self._ocr_model is None:
             from paddleocr import PaddleOCR
-            logger.debug("PaddleOCR model loading...")
+            from pathlib import Path
+
+            model_dir = self.runtime.ocr_model_dir
+            use_local = Path(model_dir).exists()
+
+            logger.debug("PaddleOCR model loading (local=%s, dir=%s)...", use_local, model_dir)
             t0 = time.perf_counter()
-            self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+
+            kwargs = {"use_angle_cls": True, "lang": "ch", "show_log": False}
+            if use_local:
+                kwargs["det_model_dir"] = str(Path(model_dir) / "det")
+                kwargs["rec_model_dir"] = str(Path(model_dir) / "rec")
+                kwargs["cls_model_dir"] = str(Path(model_dir) / "cls")
+                logger.info("Loading PaddleOCR from LOCAL path: %s", model_dir)
+            else:
+                logger.warning("Local OCR model dir '%s' not found, PaddleOCR will download models", model_dir)
+
+            self._ocr_model = PaddleOCR(**kwargs)
             elapsed = time.perf_counter() - t0
             logger.info("PaddleOCR model loaded (%.3fs)", elapsed)
         return self._ocr_model
