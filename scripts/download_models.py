@@ -69,24 +69,18 @@ def download_sbert():
 
 def download_paddleocr():
     """Download PaddleOCR models."""
-    print("  ⬇ 初始化 PaddleOCR（首次会自动下载模型到 ~/.paddlex/）...")
+    print("  ⬇ 初始化 PaddleOCR（首次会自动下载模型到 ~/.paddleocr/）...")
     try:
         from paddleocr import PaddleOCR
-        # 新版 PaddleOCR 自动管理模型缓存，不需要指定目录
-        # 只需初始化一次，模型会下载到 ~/.paddlex/official_models/
-        import os
-        os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
-        try:
-            ocr = PaddleOCR(use_textline_orientation=True, lang="ch")
-        except TypeError:
-            ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-        print(f"  ✓ PaddleOCR 初始化成功（模型缓存在 ~/.paddlex/）")
+        # PaddleOCR v2: 首次初始化自动下载模型到 ~/.paddleocr/
+        ocr = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+        print(f"  ✓ PaddleOCR 初始化成功（模型缓存在 ~/.paddleocr/）")
     except ImportError:
         print("  ✗ paddleocr 未安装，跳过")
-        print("    安装: pip install paddleocr paddlepaddle")
+        print("    安装: pip install 'paddleocr>=2.7,<3.0' paddlepaddle")
     except Exception as e:
         print(f"  ✗ 初始化失败: {e}")
-        print("    确认已安装: pip install paddlepaddle paddleocr")
+        print("    尝试: pip uninstall paddleocr -y && pip install 'paddleocr>=2.7,<3.0'")
 
 
 def main():

@@ -13,7 +13,7 @@ requests
 huggingface_hub
 
 # OCR
-paddleocr
+paddleocr>=2.7,<3.0
 paddlepaddle
 
 # Text Embedding

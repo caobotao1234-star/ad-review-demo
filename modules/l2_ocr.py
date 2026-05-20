@@ -57,23 +57,14 @@ class L2OCR:
     def _get_ocr_model(self):
         """Lazy-load PaddleOCR model (loaded once, reused across calls).
         
-        Uses PaddleOCR's built-in model cache (~/.paddlex/).
-        Compatible with both PaddleOCR v2 and v3+ API.
+        Uses PaddleOCR v2 API. Models auto-download to ~/.paddleocr/ on first use.
         """
         if self._ocr_model is None:
             from paddleocr import PaddleOCR
-            import os
 
-            os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
             logger.debug("PaddleOCR model loading...")
             t0 = time.perf_counter()
-
-            # Try new API (PaddleOCR v3+) first, fallback to old API
-            try:
-                self._ocr_model = PaddleOCR(use_textline_orientation=True, lang="ch")
-            except TypeError:
-                self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
-
+            self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
             elapsed = time.perf_counter() - t0
             logger.info("PaddleOCR model loaded (%.3fs)", elapsed)
         return self._ocr_model
