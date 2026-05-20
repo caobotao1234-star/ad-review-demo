@@ -287,53 +287,88 @@ def run_batch(batch_dir: Path, pattern: str, config_dir: Path, output_root: Path
             continue
 
         t0 = time.perf_counter()
+        timings: dict[str, float] = {}
 
         # Pipeline (same logic as run_review but reusing modules)
         from modules.l2_rule_engine import FrameOCR as L2FrameOCR, ASRResult as L2ASRResult, QRHit as L2QRHit
 
+        t_step = time.perf_counter()
         media = preprocessor.process(ad)
+        timings["media_preprocess"] = time.perf_counter() - t_step
+
+        t_step = time.perf_counter()
         l1_result = l1.recall(media)
+        timings["L1_recall"] = time.perf_counter() - t_step
 
         if l1_result.decision in (Decision.APPROVE, Decision.REJECT):
-            elapsed = time.perf_counter() - t0
+            timings["pipeline_total"] = time.perf_counter() - t0
+            elapsed = timings["pipeline_total"]
             print(f"  ✓ {l1_result.decision.value} @ L1 ({elapsed:.2f}s)")
             results_summary.append({"file": meta_path.name, "decision": l1_result.decision.value, "layer": "L1", "time": elapsed})
-            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l1_result.decision.value, "terminated_at": "L1", "layers": [l1_result.model_dump()]})
+            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l1_result.decision.value, "terminated_at": "L1", "layers": [l1_result.model_dump()], "timings": timings})
             continue
 
+        t_step = time.perf_counter()
         ocr_results = l2_ocr.extract(ad, media)
+        timings["L2_ocr"] = time.perf_counter() - t_step
+
+        t_step = time.perf_counter()
         asr_result = l2_asr.transcribe(ad, media)
+        timings["L2_asr"] = time.perf_counter() - t_step
+
+        t_step = time.perf_counter()
         qr_results = l2_qr.detect(media)
+        timings["L2_qr"] = time.perf_counter() - t_step
+
         ocr_for_l2 = [L2FrameOCR(frame_id=o.frame_id, texts=o.texts) for o in ocr_results]
         asr_for_l2 = L2ASRResult(text=asr_result.text, mock=asr_result.mock, fallback_reason=asr_result.fallback_reason)
         qr_for_l2 = [L2QRHit(frame_id=q.frame_id, decoded_text=q.decoded_text, is_private_drainage=q.is_private_drainage) for q in qr_results]
+
+        t_step = time.perf_counter()
         l2_result = l2_engine.evaluate(ad, ocr_for_l2, asr_for_l2, qr_for_l2)
+        timings["L2_rule_engine"] = time.perf_counter() - t_step
+        timings["L2_total"] = timings["L2_ocr"] + timings["L2_asr"] + timings["L2_qr"] + timings["L2_rule_engine"]
 
         if l2_result.decision in (Decision.APPROVE, Decision.REJECT):
-            elapsed = time.perf_counter() - t0
+            timings["pipeline_total"] = time.perf_counter() - t0
+            elapsed = timings["pipeline_total"]
             print(f"  ✓ {l2_result.decision.value} @ L2 ({elapsed:.2f}s)")
             results_summary.append({"file": meta_path.name, "decision": l2_result.decision.value, "layer": "L2", "time": elapsed})
-            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l2_result.decision.value, "terminated_at": "L2", "layers": [l1_result.model_dump(), l2_result.model_dump()]})
+            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l2_result.decision.value, "terminated_at": "L2", "layers": [l1_result.model_dump(), l2_result.model_dump()], "timings": timings})
             continue
 
         ocr_texts = [t for o in ocr_results for t in o.texts]
         ad_claim_text = " ".join(filter(None, [ad.title, ad.description] + ocr_texts + [asr_result.text]))
+
+        t_step = time.perf_counter()
         consistency_result = l3_consistency.check(ad, ad_claim_text, l2_result.signals)
+        timings["L3_consistency"] = time.perf_counter() - t_step
+
+        t_step = time.perf_counter()
         embedding_result = l3_embedding.similarity(ad_claim_text, ad.landing_page.text)
+        timings["L3_embedding"] = time.perf_counter() - t_step
+
+        t_step = time.perf_counter()
         l3_result = l3_fusion.fuse(ad, l1_result, l2_result, consistency_result, embedding_result)
+        timings["L3_fusion"] = time.perf_counter() - t_step
+        timings["L3_total"] = timings["L3_consistency"] + timings["L3_embedding"] + timings["L3_fusion"]
 
         if l3_result.decision in (Decision.APPROVE, Decision.REJECT):
-            elapsed = time.perf_counter() - t0
+            timings["pipeline_total"] = time.perf_counter() - t0
+            elapsed = timings["pipeline_total"]
             print(f"  ✓ {l3_result.decision.value} @ L3 ({elapsed:.2f}s)")
             results_summary.append({"file": meta_path.name, "decision": l3_result.decision.value, "layer": "L3", "time": elapsed})
-            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l3_result.decision.value, "terminated_at": "L3", "layers": [l1_result.model_dump(), l2_result.model_dump(), l3_result.model_dump()]})
+            writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l3_result.decision.value, "terminated_at": "L3", "layers": [l1_result.model_dump(), l2_result.model_dump(), l3_result.model_dump()], "timings": timings})
             continue
 
+        t_step = time.perf_counter()
         l4_result = l4.review(ad, l1_result, l2_result, l3_result, media)
-        elapsed = time.perf_counter() - t0
+        timings["L4_agent"] = time.perf_counter() - t_step
+        timings["pipeline_total"] = time.perf_counter() - t0
+        elapsed = timings["pipeline_total"]
         print(f"  ✓ {l4_result.decision.value} @ L4 ({elapsed:.2f}s)")
         results_summary.append({"file": meta_path.name, "decision": l4_result.decision.value, "layer": "L4", "time": elapsed})
-        writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l4_result.decision.value, "terminated_at": "L4", "layers": [l1_result.model_dump(), l2_result.model_dump(), l3_result.model_dump(), l4_result.model_dump()]})
+        writer.write_review(ad.ad_id, {"ad_id": ad.ad_id, "final_decision": l4_result.decision.value, "terminated_at": "L4", "layers": [l1_result.model_dump(), l2_result.model_dump(), l3_result.model_dump(), l4_result.model_dump()], "timings": timings})
 
     batch_elapsed = time.perf_counter() - batch_start
     print(f"\n{'=' * 60}")
