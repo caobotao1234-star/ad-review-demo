@@ -58,15 +58,21 @@ class L2OCR:
         """Lazy-load PaddleOCR model (loaded once, reused across calls).
         
         Uses PaddleOCR v2 API. Models auto-download to ~/.paddleocr/ on first use.
+        Forces CPU mode to avoid CUDA conflicts with faster-whisper/CTranslate2.
         """
         if self._ocr_model is None:
             from paddleocr import PaddleOCR
 
-            logger.debug("PaddleOCR model loading...")
+            logger.debug("PaddleOCR model loading (forced CPU to avoid CUDA conflicts)...")
             t0 = time.perf_counter()
-            self._ocr_model = PaddleOCR(use_angle_cls=True, lang="ch", show_log=False)
+            self._ocr_model = PaddleOCR(
+                use_angle_cls=True,
+                lang="ch",
+                show_log=False,
+                use_gpu=False,  # 强制 CPU，避免与 faster-whisper 的 CUDA 冲突
+            )
             elapsed = time.perf_counter() - t0
-            logger.info("PaddleOCR model loaded (%.3fs)", elapsed)
+            logger.info("PaddleOCR model loaded (%.3fs, CPU mode)", elapsed)
         return self._ocr_model
 
     def extract(self, ad: AdMeta, media: MediaResult) -> list[FrameOCR]:
