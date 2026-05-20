@@ -58,6 +58,7 @@ class L2OCR:
         """Lazy-load PaddleOCR model (loaded once, reused across calls).
         
         If ocr_model_dir exists locally, load from there (no network needed).
+        Compatible with both PaddleOCR v2 and v3+ API.
         """
         if self._ocr_model is None:
             from paddleocr import PaddleOCR
@@ -69,18 +70,25 @@ class L2OCR:
             logger.debug("PaddleOCR model loading (local=%s, dir=%s)...", use_local, model_dir)
             t0 = time.perf_counter()
 
-            kwargs = {"use_angle_cls": True, "lang": "ch", "show_log": False}
-            if use_local:
-                kwargs["det_model_dir"] = str(Path(model_dir) / "det")
-                kwargs["rec_model_dir"] = str(Path(model_dir) / "rec")
-                kwargs["cls_model_dir"] = str(Path(model_dir) / "cls")
-                logger.info("Loading PaddleOCR from LOCAL path: %s", model_dir)
-            else:
-                logger.warning("Local OCR model dir '%s' not found, PaddleOCR will download models", model_dir)
+            # Try new API (PaddleOCR v3+) first, fallback to old API
+            try:
+                kwargs = {"use_textline_orientation": True, "lang": "ch"}
+                if use_local:
+                    kwargs["text_detection_model_dir"] = str(Path(model_dir) / "det")
+                    kwargs["text_recognition_model_dir"] = str(Path(model_dir) / "rec")
+                    kwargs["textline_orientation_model_dir"] = str(Path(model_dir) / "cls")
+                self._ocr_model = PaddleOCR(**kwargs)
+            except TypeError:
+                # Fallback to old API (PaddleOCR v2)
+                kwargs = {"use_angle_cls": True, "lang": "ch", "show_log": False}
+                if use_local:
+                    kwargs["det_model_dir"] = str(Path(model_dir) / "det")
+                    kwargs["rec_model_dir"] = str(Path(model_dir) / "rec")
+                    kwargs["cls_model_dir"] = str(Path(model_dir) / "cls")
+                self._ocr_model = PaddleOCR(**kwargs)
 
-            self._ocr_model = PaddleOCR(**kwargs)
             elapsed = time.perf_counter() - t0
-            logger.info("PaddleOCR model loaded (%.3fs)", elapsed)
+            logger.info("PaddleOCR model loaded (%.3fs, local=%s)", elapsed, use_local)
         return self._ocr_model
 
     def extract(self, ad: AdMeta, media: MediaResult) -> list[FrameOCR]:

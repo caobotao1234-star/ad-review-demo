@@ -79,14 +79,25 @@ def download_paddleocr():
         from paddleocr import PaddleOCR
         # PaddleOCR 首次初始化会自动下载模型
         target.mkdir(parents=True, exist_ok=True)
-        ocr = PaddleOCR(
-            use_angle_cls=True,
-            lang="ch",
-            show_log=False,
-            det_model_dir=str(target / "det"),
-            rec_model_dir=str(target / "rec"),
-            cls_model_dir=str(target / "cls"),
-        )
+        # 新版 PaddleOCR (v3+) 参数名变更
+        try:
+            ocr = PaddleOCR(
+                use_textline_orientation=True,
+                lang="ch",
+                text_detection_model_dir=str(target / "det"),
+                text_recognition_model_dir=str(target / "rec"),
+                textline_orientation_model_dir=str(target / "cls"),
+            )
+        except TypeError:
+            # 旧版 PaddleOCR 兼容
+            ocr = PaddleOCR(
+                use_angle_cls=True,
+                lang="ch",
+                show_log=False,
+                det_model_dir=str(target / "det"),
+                rec_model_dir=str(target / "rec"),
+                cls_model_dir=str(target / "cls"),
+            )
         print(f"  ✓ 下载完成: {target}")
     except ImportError:
         print("  ✗ paddleocr 未安装，跳过")
